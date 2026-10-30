@@ -1,0 +1,10 @@
+{
+  "status": 200,
+  "headers": {
+    "x-ad-account-usage": "{\"acc_id_util_pct\": 81.2, \"reset_time_duration\": 10, \"ads_api_access_tier\": \"development_access\"}",
+    "x-business-use-case-usage": "{\"100000000000001\": [{\"type\": \"ads_management\", \"call_count\": 40, \"total_cputime\": 12, \"total_time\": 15, \"estimated_time_to_regain_access\": 0, \"ads_api_access_tier\": \"development_access\"}]}"
+  },
+  "body": {
+    "success": true
+  }
+}

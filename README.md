@@ -53,7 +53,7 @@ Sessions follow *Claude Code playbook → Session order* in the spec.
 
 - [x] 1. Monorepo, design tokens, light and dark themes, app shell, ⌘K
 - [x] 2. Drizzle schema, RLS, metric views, seed data
-- [ ] 3. `packages/meta` client, headers, error map, throttle
+- [x] 3. `packages/meta` client, headers, error map, throttle
 - [ ] 4. Settings → Meta connections
 - [ ] 5. Sync and insights workers, Ads table
 - [ ] 6. Dashboard

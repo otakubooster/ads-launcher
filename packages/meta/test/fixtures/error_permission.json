@@ -1,0 +1,12 @@
+{
+  "status": 403,
+  "headers": {},
+  "body": {
+    "error": {
+      "message": "(#200) Requires ads_management permission to manage the object",
+      "type": "OAuthException",
+      "code": 200,
+      "fbtrace_id": "A1b2C3perm"
+    }
+  }
+}

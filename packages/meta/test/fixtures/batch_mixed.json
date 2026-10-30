@@ -1,0 +1,17 @@
+{
+  "status": 200,
+  "headers": {
+    "x-ad-account-usage": "{\"acc_id_util_pct\": 22, \"reset_time_duration\": 0, \"ads_api_access_tier\": \"development_access\"}"
+  },
+  "body": [
+    {
+      "code": 200,
+      "body": "{\"id\": \"120200000000000777\"}"
+    },
+    {
+      "code": 400,
+      "body": "{\"error\": {\"message\": \"Invalid parameter\", \"type\": \"OAuthException\", \"code\": 100, \"error_user_title\": \"Missing link\", \"error_user_msg\": \"Add a website URL to this ad.\", \"fbtrace_id\": \"A1b2C3batch\"}}"
+    },
+    null
+  ]
+}

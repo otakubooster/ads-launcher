@@ -1,0 +1,16 @@
+{
+  "status": 400,
+  "headers": {
+    "x-ad-account-usage": "{\"acc_id_util_pct\": 100, \"reset_time_duration\": 20, \"ads_api_access_tier\": \"development_access\"}"
+  },
+  "body": {
+    "error": {
+      "message": "(#80004) There have been too many calls to this ad-account. Wait a bit and try again.",
+      "type": "OAuthException",
+      "code": 80004,
+      "error_subcode": 2446079,
+      "is_transient": true,
+      "fbtrace_id": "A1b2C3rate"
+    }
+  }
+}

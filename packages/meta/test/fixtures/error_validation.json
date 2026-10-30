@@ -1,0 +1,16 @@
+{
+  "status": 400,
+  "headers": {},
+  "body": {
+    "error": {
+      "message": "Invalid parameter",
+      "type": "OAuthException",
+      "code": 100,
+      "error_subcode": 1885272,
+      "is_transient": false,
+      "error_user_title": "Budget too low",
+      "error_user_msg": "Your daily budget must be at least $1.00.",
+      "fbtrace_id": "A1b2C3valid"
+    }
+  }
+}
