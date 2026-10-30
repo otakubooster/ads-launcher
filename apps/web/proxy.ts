@@ -23,5 +23,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // api/files streams uploads of any size; middleware would cap and truncate the body at 10 MB.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/files/).*)"],
 };

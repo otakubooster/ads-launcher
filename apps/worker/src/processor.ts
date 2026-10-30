@@ -1,4 +1,13 @@
-import { backfillInsights, markConnectionBroken, syncAccountObjects, syncInsights, type AccountJobData, type AnyDb } from "@fahd/core";
+import {
+  backfillInsights,
+  markConnectionBroken,
+  storageFromEnv,
+  syncAccountObjects,
+  syncInsights,
+  uploadCreativeToAccount,
+  type AccountJobData,
+  type AnyDb,
+} from "@fahd/core";
 import { adAccounts } from "@fahd/db/schema";
 import { MetaApiError } from "@fahd/meta";
 import { UnrecoverableError } from "bullmq";
@@ -16,6 +25,8 @@ export async function processAccountJob(db: AnyDb, data: AccountJobData): Promis
         return { rows: await syncInsights(db, data.adAccountId, data) };
       case "backfill":
         return { rows: await backfillInsights(db, data.adAccountId, data) };
+      case "upload":
+        return await uploadCreativeToAccount(db, storageFromEnv(), data.creativeId, data.adAccountId);
       default:
         throw new UnrecoverableError(`No processor for ${data.kind} yet`);
     }

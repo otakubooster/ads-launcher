@@ -100,5 +100,14 @@ everything created paused. Screens checked in light and dark against the spec.
   every chart an sr-only table. Axis money uses formatMoneyAxis.
 - Mixed currencies convert to REPORTING_CURRENCY with packages/core/src/fx.ts (FX_RATES env,
   Redis cache, ECB via frankfurter). Unconvertible accounts are excluded and named, never guessed.
+- Creatives: browser → storage directly (signed PUT, sha256 via hash-wasm in 8 MB slices,
+  poster frame from <video>), then finishUpload checks the stored size and inserts the row.
+  Storage adapter in packages/core/src/storage.ts (supabase | local). Never route uploads
+  through proxy.ts: middleware caps bodies at 10 MB (api/files is excluded from its matcher).
+- Meta media: uploadCreativeToAccount() caches per account in creative_uploads, dedupes by
+  sha256, sends images as multipart, videos by signed file_url (Supabase) or Meta's chunked
+  protocol (local), polls until ready and keeps the preferred thumbnail (video ads need it).
+- Client components import browser-safe code from `@fahd/shared/creatives`, never the
+  package root (it exports node:crypto token encryption).
 - DB tests run on PGlite (in-memory Postgres) with supabase-shim.sql; test/helpers.ts
   has asUser / asServiceRole, which always roll back. No database server needed.
