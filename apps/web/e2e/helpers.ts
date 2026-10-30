@@ -20,3 +20,15 @@ export async function ensureConnected(page: Page) {
   await page.getByRole("button", { name: "Connect" }).click();
   await expect(page.getByText(/Connected Fahd Holdings \(fake\): 3 ad accounts/)).toBeVisible({ timeout: 30_000 });
 }
+
+/** Pulls campaigns, ad sets, ads and today's insights from the fake Graph API. */
+export async function syncNow(page: Page) {
+  await page.getByRole("button", { name: "Refresh data" }).click();
+  await expect(page.getByText(/Synced 3 accounts/)).toBeVisible({ timeout: 30_000 });
+}
+
+export const GRAPH = "http://127.0.0.1:4011";
+
+export async function fakeObjects(): Promise<{ id: string; type: string; name?: string; status?: string; daily_budget?: string }[]> {
+  return (await (await fetch(`${GRAPH}/__fake/state`)).json()).objects;
+}

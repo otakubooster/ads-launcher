@@ -38,6 +38,7 @@ The app runs end to end against a fake Graph API and development sign-in:
 ```bash
 pnpm db:migrate && pnpm db:seed --minimal   # team, brands, templates; no Meta data
 pnpm fake-meta                              # fake Graph API on :4010
+pnpm worker                                 # BullMQ worker (REDIS_URL); optional locally
 pnpm dev                                    # with DEV_AUTH=1 and META_GRAPH_HOST in apps/web/.env.local
 ```
 
@@ -69,7 +70,7 @@ Sessions follow *Claude Code playbook → Session order* in the spec.
 - [x] 2. Drizzle schema, RLS, metric views, seed data
 - [x] 3. `packages/meta` client, headers, error map, throttle
 - [x] 4. Settings → Meta connections
-- [ ] 5. Sync and insights workers, Ads table
+- [x] 5. Sync and insights workers, Ads table
 - [ ] 6. Dashboard
 - [ ] 7. Creatives library and upload pipeline
 - [ ] 8. Presets, naming and ad set templates

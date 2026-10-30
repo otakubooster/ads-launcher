@@ -27,7 +27,7 @@ export function Sidebar() {
 /** Shared by the desktop sidebar and the mobile sheet (data-sidebar="expanded"). */
 export function SidebarContent({ inSheet = false, onNavigate }: { inSheet?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { sidebarCollapsed, setSidebarCollapsed } = useShell();
+  const { sidebarCollapsed, setSidebarCollapsed, query } = useShell();
   const wide = useMediaQuery("(min-width: 1280px)", true);
   const isRail = !inSheet && (sidebarCollapsed || !wide);
 
@@ -49,7 +49,7 @@ export function SidebarContent({ inSheet = false, onNavigate }: { inSheet?: bool
           const Icon = item.icon;
           const link = (
             <Link
-              href={item.href}
+              href={`${item.href}${query}`}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
               aria-label={item.label}

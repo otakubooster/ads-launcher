@@ -16,7 +16,8 @@ export const E2E_ENV = {
   META_GRAPH_HOST: `http://127.0.0.1:${GRAPH_PORT}`,
   META_APP_SECRET: "e2e-secret",
   TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY ?? randomBytes(32).toString("base64"),
-  REDIS_URL: process.env.E2E_REDIS_URL ?? "redis://127.0.0.1:6379/15",
+  // Empty: no worker runs in e2e, so syncs and launches run inline.
+  REDIS_URL: "",
 };
 
 export default defineConfig({

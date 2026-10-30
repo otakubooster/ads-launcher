@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { refreshAction } from "@/app/(app)/ads/actions";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,8 +14,23 @@ import { useShell } from "./shell-provider";
 const STALE_AFTER_MS = 30 * 60 * 1000;
 
 export function SyncStatus() {
-  const { lastSyncedAt } = useShell();
+  const { lastSyncedAt, selectedAccountIds, accounts } = useShell();
   const [now, setNow] = useState(() => new Date());
+  const [pending, start] = useTransition();
+  const router = useRouter();
+
+  function refresh() {
+    if (accounts.length === 0) {
+      toast("Nothing to sync yet", { description: "Connect a Business Manager in Settings first." });
+      return;
+    }
+    start(async () => {
+      const res = await refreshAction(selectedAccountIds);
+      if (res.ok) toast.success(res.message ?? "Synced");
+      else toast.error(res.error.title, { description: res.error.detail });
+      router.refresh();
+    });
+  }
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30_000);
@@ -38,11 +55,10 @@ export function SyncStatus() {
             variant="ghost"
             size="icon"
             aria-label="Refresh data"
-            onClick={() =>
-              toast("Nothing to sync yet", { description: "Connect a Business Manager in Settings first." })
-            }
+            disabled={pending}
+            onClick={refresh}
           >
-            <RefreshCw />
+            <RefreshCw className={cn(pending && "animate-spin")} />
           </Button>
         </TooltipTrigger>
         <TooltipContent>{text} · Refresh</TooltipContent>

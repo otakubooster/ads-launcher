@@ -1,0 +1,243 @@
+"use server";
+
+import {
+  changeDailyBudget,
+  changeStatus,
+  quarterHourBucket,
+  syncAccountObjects,
+  syncInsights,
+  syncableAccounts,
+  todayIn,
+  type MetaChange,
+  type ObjectLevel,
+} from "@fahd/core";
+import { changeLog, savedViews } from "@fahd/db/schema";
+import { MetaApiError, describeMetaError } from "@fahd/meta";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import type { DateRange } from "@/lib/date-range";
+import { type ActionResult, runAction } from "@/lib/server/action-result";
+import { requireRole } from "@/lib/server/auth";
+import { asUser, getDb } from "@/lib/server/db";
+import { getQueues } from "@/lib/server/queue";
+
+const level = z.enum(["campaign", "adset", "ad"]);
+const ids = z.array(z.uuid()).min(1).max(500);
+
+type Failure = { id: string; title: string; detail: string };
+
+/** Runs a Meta write and appends one change_log row with before, after and Meta's response (or error). */
+const MIRROR = { campaign: "meta_campaigns", adset: "meta_adsets", ad: "meta_ads" } as const;
+
+async function logged(userId: string, entityLevel: ObjectLevel, objectId: string, action: string, fn: () => Promise<MetaChange>) {
+  try {
+    const change = await fn();
+    await asUser(userId, (tx) =>
+      tx.insert(changeLog).values({
+        actorId: userId,
+        source: "ui",
+        entityLevel,
+        entityId: change.metaId,
+        action,
+        before: change.before,
+        after: change.after,
+        metaResponse: change.metaResponse as object,
+      }),
+    );
+    return change;
+  } catch (e) {
+    if (e instanceof MetaApiError) {
+      await asUser(userId, async (tx) => {
+        const [obj] = (await tx.execute(sql`select meta_id from ${sql.raw(MIRROR[entityLevel])} where id = ${objectId}`)) as unknown as { meta_id: string }[];
+        await tx.insert(changeLog).values({
+          actorId: userId,
+          source: "ui",
+          entityLevel,
+          entityId: obj?.meta_id ?? objectId,
+          action: `${action}_failed`,
+          metaResponse: { kind: e.kind, code: e.code, message: e.message, userMessage: e.userMessage },
+        });
+      });
+    }
+    throw e;
+  }
+}
+
+function summarize(done: number, failed: Failure[], verb: string): ActionResult<{ failed: Failure[] }> {
+  if (failed.length === 0) return { ok: true, message: `${verb} ${done} ${done === 1 ? "item" : "items"}.`, data: { failed } };
+  const first = failed[0]!;
+  return {
+    ok: false,
+    error: {
+      title: done ? `${verb} ${done}; ${failed.length} failed` : first.title,
+      detail: first.detail,
+      fix: failed.length > 1 ? `${failed.length - 1} more failed the same way or similar.` : undefined,
+    },
+  };
+}
+
+function failureOf(id: string, e: unknown): Failure {
+  if (e instanceof MetaApiError) {
+    const d = describeMetaError(e);
+    return { id, title: d.title, detail: `${d.detail} ${d.fix}` };
+  }
+  return { id, title: "Change failed", detail: e instanceof Error ? e.message : String(e) };
+}
+
+export async function setStatusAction(objectLevel: string, objectIds: string[], status: "ACTIVE" | "PAUSED") {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ level, ids, status: z.enum(["ACTIVE", "PAUSED"]) }).parse({ level: objectLevel, ids: objectIds, status });
+    const failed: Failure[] = [];
+    let done = 0;
+    for (const id of input.ids) {
+      try {
+        await logged(session.userId, input.level, id, status === "ACTIVE" ? "activate" : "pause", () => changeStatus(getDb(), input.level, id, input.status));
+        done++;
+      } catch (e) {
+        failed.push(failureOf(id, e));
+      }
+    }
+    revalidatePath("/ads");
+    return summarize(done, failed, status === "ACTIVE" ? "Activated" : "Paused");
+  });
+}
+
+export async function setBudgetAction(objectLevel: string, objectId: string, dailyBudget: number) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z
+      .object({ level: z.enum(["campaign", "adset"]), id: z.uuid(), dailyBudget: z.number().int().positive() })
+      .parse({ level: objectLevel, id: objectId, dailyBudget });
+    const change = await logged(session.userId, input.level, input.id, "update_budget", () => changeDailyBudget(getDb(), input.level, input.id, input.dailyBudget));
+    revalidatePath("/ads");
+    return { ok: true, message: `Budget updated for ${change.name}.` } satisfies ActionResult;
+  });
+}
+
+/** Moves each budget by pct (e.g. 10 or -20), rounding to whole minor units. */
+export async function adjustBudgetsAction(objectLevel: string, objectIds: string[], pct: number, current: Record<string, number>) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z
+      .object({ level: z.enum(["campaign", "adset"]), ids, pct: z.number().min(-90).max(500), current: z.record(z.string(), z.number()) })
+      .parse({ level: objectLevel, ids: objectIds, pct, current });
+    const failed: Failure[] = [];
+    let done = 0;
+    for (const id of input.ids) {
+      const before = input.current[id];
+      if (!before) continue;
+      try {
+        const next = Math.max(100, Math.round(before * (1 + input.pct / 100)));
+        await logged(session.userId, input.level, id, "update_budget", () => changeDailyBudget(getDb(), input.level, id, next));
+        done++;
+      } catch (e) {
+        failed.push(failureOf(id, e));
+      }
+    }
+    revalidatePath("/ads");
+    return summarize(done, failed, "Updated budgets on");
+  });
+}
+
+/** Refreshes from Meta: queued for the worker, or inline without Redis. */
+export async function refreshAction(accountIds: string[]): Promise<ActionResult> {
+  return runAction(async () => {
+    await requireRole();
+    const accounts = (await syncableAccounts(getDb())).filter((a) => accountIds.length === 0 || accountIds.includes(a.id));
+    const queues = getQueues();
+    if (queues) {
+      const bucket = `manual-${quarterHourBucket()}-${Date.now() >> 15}`;
+      for (const a of accounts) {
+        const today = todayIn(a.timezone);
+        await queues.add({ kind: "sync-objects", adAccountId: a.id }, bucket);
+        await queues.add({ kind: "sync-insights", adAccountId: a.id, since: today, until: today }, bucket);
+      }
+      return { ok: true, message: `Sync queued for ${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}.` };
+    }
+    for (const a of accounts) {
+      const today = todayIn(a.timezone);
+      await syncAccountObjects(getDb(), a.id);
+      await syncInsights(getDb(), a.id, { since: today, until: today });
+    }
+    revalidatePath("/", "layout");
+    return { ok: true, message: `Synced ${accounts.length} ${accounts.length === 1 ? "account" : "accounts"}.` };
+  });
+}
+
+export type EntityDetail = {
+  daily: { date: string; spend: number; purchases: number; purchaseValue: number; impressions: number }[];
+  history: { id: string; at: string; action: string; source: string; actor: string | null; before: unknown; after: unknown }[];
+  settings: { label: string; value: string }[];
+};
+
+const VIEW_BY_LEVEL = { campaign: ["campaign_insights_daily", "campaign_id"], adset: ["adset_insights_daily", "adset_id"], ad: ["ad_insights_daily", "ad_id"] } as const;
+
+export async function loadDetailAction(objectLevel: string, objectId: string, range: DateRange): Promise<ActionResult<EntityDetail>> {
+  return runAction(async () => {
+    const session = await requireRole();
+    const input = z.object({ level, id: z.uuid() }).parse({ level: objectLevel, id: objectId });
+    const [view, column] = VIEW_BY_LEVEL[input.level];
+    const table = input.level === "campaign" ? "meta_campaigns" : input.level === "adset" ? "meta_adsets" : "meta_ads";
+    return asUser(session.userId, async (tx) => {
+      const daily = (await tx.execute(sql`
+        select date::text, spend::float8, purchases::float8, purchase_value::float8 as "purchaseValue", impressions::float8
+        from ${sql.raw(view)} where ${sql.raw(column)} = ${input.id}
+          and date between ${range.since}::date and ${range.until}::date order by date`)) as unknown as EntityDetail["daily"];
+      const [obj] = (await tx.execute(sql`select meta_id, raw from ${sql.raw(table)} where id = ${input.id}`)) as unknown as { meta_id: string; raw: Record<string, unknown> }[];
+      const history = await tx
+        .select({ id: changeLog.id, at: changeLog.createdAt, action: changeLog.action, source: changeLog.source, actor: sql<string | null>`(select coalesce(name, email) from users where id = ${changeLog.actorId})`, before: changeLog.before, after: changeLog.after })
+        .from(changeLog)
+        .where(and(eq(changeLog.entityLevel, input.level), eq(changeLog.entityId, obj?.meta_id ?? "")))
+        .orderBy(desc(changeLog.createdAt))
+        .limit(50);
+      const raw = obj?.raw ?? {};
+      const countries = (raw.targeting as { geo_locations?: { countries?: string[] } } | undefined)?.geo_locations?.countries;
+      const settings = [
+        ["Meta ID", obj?.meta_id],
+        ["Objective", raw.objective],
+        ["Optimization goal", raw.optimization_goal],
+        ["Billing event", raw.billing_event],
+        ["Bid strategy", raw.bid_strategy],
+        ["Countries", countries?.join(", ")],
+        ["Advantage+ audience", (raw.targeting as { targeting_automation?: { advantage_audience?: number } } | undefined)?.targeting_automation?.advantage_audience ? "On" : undefined],
+        ["Pixel", (raw.promoted_object as { pixel_id?: string } | undefined)?.pixel_id],
+        ["Learning", (raw.learning_stage_info as { status?: string } | undefined)?.status],
+        ["Creative", (raw.creative as { id?: string } | undefined)?.id],
+      ]
+        .filter(([, v]) => v !== undefined && v !== null && v !== "")
+        .map(([label, value]) => ({ label: String(label), value: String(value).replace(/_/g, " ") }));
+      return { ok: true, data: { daily, settings, history: history.map((h) => ({ ...h, at: h.at.toISOString() })) } } satisfies ActionResult<EntityDetail>;
+    });
+  });
+}
+
+const viewInput = z.object({
+  name: z.string().trim().min(1, "Name the view.").max(60),
+  level,
+  columns: z.array(z.string()).max(40),
+  filters: z.record(z.string(), z.unknown()),
+  sort: z.array(z.object({ id: z.string(), desc: z.boolean() })).max(3),
+});
+
+export async function saveViewAction(view: z.infer<typeof viewInput>): Promise<ActionResult<{ id: string }>> {
+  return runAction(async () => {
+    const session = await requireRole();
+    const input = viewInput.parse(view);
+    const [row] = await asUser(session.userId, (tx) =>
+      tx.insert(savedViews).values({ userId: session.userId, ...input }).returning({ id: savedViews.id }),
+    );
+    revalidatePath("/ads");
+    return { ok: true, message: `Saved view "${input.name}".`, data: { id: row!.id } };
+  });
+}
+
+export async function deleteViewAction(id: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const session = await requireRole();
+    await asUser(session.userId, (tx) => tx.delete(savedViews).where(eq(savedViews.id, z.uuid().parse(id))));
+    revalidatePath("/ads");
+    return { ok: true, message: "View deleted." };
+  });
+}

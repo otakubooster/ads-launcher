@@ -1,3 +1,7 @@
 export * from "./types";
 export * from "./meta-client";
 export * from "./connections";
+export * from "./sync";
+export * from "./dates";
+export * from "./queues";
+export * from "./objects";
