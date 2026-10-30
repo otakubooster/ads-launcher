@@ -1,0 +1,9 @@
+{
+  "status": 200,
+  "headers": {
+    "x-ad-account-usage": "{\"acc_id_util_pct\": 4, \"reset_time_duration\": 0, \"ads_api_access_tier\": \"development_access\"}"
+  },
+  "body": {
+    "id": "120200000000000123"
+  }
+}

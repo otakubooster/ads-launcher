@@ -1,0 +1,13 @@
+{
+  "status": 400,
+  "headers": {},
+  "body": {
+    "error": {
+      "message": "(#368) The action attempted has been deemed abusive or is otherwise disallowed",
+      "type": "OAuthException",
+      "code": 368,
+      "error_subcode": 1404078,
+      "fbtrace_id": "A1b2C3policy"
+    }
+  }
+}

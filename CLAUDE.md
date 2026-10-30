@@ -53,5 +53,17 @@ everything created paused. Screens checked in light and dark against the spec.
 - change_log is append-only for every role (trigger), the service role included.
 - Metric views (ad/adset/campaign/account_insights_daily) sum before dividing;
   CPA and CPM come out in minor units, and division by zero gives null.
+- Meta (packages/meta): `createMetaClient({ accessToken, appSecret, onUsage })` is the only
+  way to call Graph. It sends the token as a Bearer header (never in URLs or logs), signs
+  with appsecret_proof, parses usage headers, retries per the spec and throws
+  MetaApiError (kind, code, userTitle/userMessage, retryAfterMs, ambiguous).
+  describeMetaError() gives UI copy (title, detail, fix).
+- The client refuses any create (campaigns, adsets, ads, copies) that is not PAUSED,
+  including inside batches. Activation is a separate POST /{id} with status ACTIVE.
+- Throttle (packages/meta/src/throttle.ts) is per process. The worker must also use one
+  BullMQ queue per ad account with concurrency 1, and feed onUsage into api_usage.
+- A write that times out is `ambiguous`: look the object up by name before retrying.
+- Meta tests replay fixtures in packages/meta/test/fixtures (Meta's response format)
+  with a fake clock; CI never calls Meta.
 - DB tests run on PGlite (in-memory Postgres) with supabase-shim.sql; test/helpers.ts
   has asUser / asServiceRole, which always roll back. No database server needed.

@@ -1,0 +1,33 @@
+{
+  "status": 200,
+  "headers": {
+    "x-business-use-case-usage": "{\"100000000000001\": [{\"type\": \"ads_management\", \"call_count\": 3, \"total_cputime\": 12, \"total_time\": 15, \"estimated_time_to_regain_access\": 0, \"ads_api_access_tier\": \"development_access\"}]}"
+  },
+  "body": {
+    "data": [
+      {
+        "id": "act_200000000000001",
+        "name": "Lumen US",
+        "currency": "USD",
+        "timezone_name": "America/New_York",
+        "account_status": 1,
+        "amount_spent": "1843522"
+      },
+      {
+        "id": "act_200000000000002",
+        "name": "Lumen UK",
+        "currency": "GBP",
+        "timezone_name": "Europe/London",
+        "account_status": 1,
+        "amount_spent": "912004"
+      }
+    ],
+    "paging": {
+      "cursors": {
+        "before": "QVFIUmJ2",
+        "after": "QVFIUnB3"
+      },
+      "next": "https://graph.facebook.com/v26.0/100000000000001/owned_ad_accounts?fields=id&limit=2&after=QVFIUnB3"
+    }
+  }
+}

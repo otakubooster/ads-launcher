@@ -1,0 +1,30 @@
+{
+  "status": 200,
+  "headers": {},
+  "body": {
+    "data": [
+      {
+        "id": "act_200000000000002",
+        "name": "Lumen UK",
+        "currency": "GBP",
+        "timezone_name": "Europe/London",
+        "account_status": 1,
+        "amount_spent": "912004"
+      },
+      {
+        "id": "act_200000000000009",
+        "name": "Partner shared",
+        "currency": "USD",
+        "timezone_name": "America/Los_Angeles",
+        "account_status": 1,
+        "amount_spent": "5000"
+      }
+    ],
+    "paging": {
+      "cursors": {
+        "before": "QVFI",
+        "after": "QVFI"
+      }
+    }
+  }
+}
