@@ -8,6 +8,10 @@
   "scripts": {
     "dev": "pnpm --filter @fahd/web dev",
     "worker": "pnpm --filter @fahd/worker dev",
+    "db:generate": "pnpm --filter @fahd/db generate",
+    "db:migrate": "pnpm --filter @fahd/db migrate",
+    "db:seed": "pnpm --filter @fahd/db seed",
+    "db:studio": "pnpm --filter @fahd/db studio",
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",

@@ -13,6 +13,24 @@ pnpm dev          # web app on http://localhost:3000
 pnpm worker       # background worker (no queues yet)
 ```
 
+## Database
+
+The app targets Supabase (Postgres 15+). Point `DATABASE_URL` at a Supabase project, or
+run one locally with the [Supabase CLI](https://supabase.com/docs/guides/local-development)
+(`supabase start`), then:
+
+```bash
+pnpm db:migrate   # apply migrations in packages/db/migrations
+pnpm db:seed      # fictional brands, accounts, 28 days of metrics (local databases only)
+```
+
+For plain Postgres instead of Supabase, apply `packages/db/supabase-shim.sql` once
+before migrating. It adds the `auth` schema and roles that Supabase normally provides.
+Never run the shim against a Supabase project.
+
+The seed signs nobody in: it creates four team members (owner, admin, buyer, viewer)
+at `@example.com` addresses, with fixed IDs listed in `packages/db/src/seed.ts`.
+
 ## Checks
 
 ```bash
@@ -34,7 +52,7 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm e2e
 Sessions follow *Claude Code playbook → Session order* in the spec.
 
 - [x] 1. Monorepo, design tokens, light and dark themes, app shell, ⌘K
-- [ ] 2. Drizzle schema, RLS, metric views, seed data
+- [x] 2. Drizzle schema, RLS, metric views, seed data
 - [ ] 3. `packages/meta` client, headers, error map, throttle
 - [ ] 4. Settings → Meta connections
 - [ ] 5. Sync and insights workers, Ads table

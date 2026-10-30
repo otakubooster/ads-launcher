@@ -36,4 +36,22 @@ everything created paused. Screens checked in light and dark against the spec.
   `radix-ui` package. Keep new ones on the same tokens.
 - Navigation and keyboard shortcuts are defined once in apps/web/lib/nav.ts.
 - Number, money and date formatting: apps/web/lib/format.ts and lib/date-range.ts.
-- `pnpm db:migrate` is added in session 2.
+- Database (packages/db): Drizzle schema in src/schema, one file per domain. RLS
+  policies sit next to each table, built from helpers in src/schema/_shared.ts
+  (membersCanRead, rolesCanWrite, hasRole). Shared column sets are factories
+  (`...base()`), because Drizzle column builders must not be shared between tables.
+- Migrations: change the schema, then `pnpm db:generate`. Functions, triggers, views and
+  grants go in hand-written migrations (`drizzle-kit generate --custom`): 0000 holds the
+  `app.*` helpers policies call; 0002 holds triggers, column grants and metric views.
+- Two ways to query: `createDb()` is privileged (worker and system writes, no RLS);
+  `withUser(db, userId, fn)` runs as Supabase's `authenticated` role, so RLS applies.
+  Use withUser for everything a signed-in member triggers.
+- meta_connections.token_ciphertext / token_iv are not selectable by `authenticated`.
+  Never `.returning()` all columns from that table inside withUser.
+- ad_accounts: members may only update max_daily_budget, approval_threshold and
+  launch_enabled (column grants); everything else comes from Meta sync.
+- change_log is append-only for every role (trigger), the service role included.
+- Metric views (ad/adset/campaign/account_insights_daily) sum before dividing;
+  CPA and CPM come out in minor units, and division by zero gives null.
+- DB tests run on PGlite (in-memory Postgres) with supabase-shim.sql; test/helpers.ts
+  has asUser / asServiceRole, which always roll back. No database server needed.
