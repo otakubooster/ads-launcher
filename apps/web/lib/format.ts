@@ -88,3 +88,10 @@ export function moneyInputValue(minor: number | null | undefined, currency: stri
   const digits = currencyDigits(currency);
   return (minor / 10 ** digits).toFixed(digits);
 }
+
+/** Short money for chart axes: "$2.8k", "$950". */
+export function formatMoneyAxis(minor: number, currency: string) {
+  const value = minor / 10 ** currencyDigits(currency);
+  const out = new Intl.NumberFormat(LOCALE, { style: "currency", currency, notation: "compact", minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(value);
+  return lowerThousands(out);
+}

@@ -44,6 +44,7 @@ export default async function AdsPage({ searchParams }: { searchParams: Promise<
         range={range}
         parentSelection={{ campaignIds, adsetIds }}
         hasAccounts={extra.accounts > 0}
+        initialOpenId={uuids(params.open)[0]}
       />
     </>
   );

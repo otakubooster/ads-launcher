@@ -71,7 +71,7 @@ Sessions follow *Claude Code playbook → Session order* in the spec.
 - [x] 3. `packages/meta` client, headers, error map, throttle
 - [x] 4. Settings → Meta connections
 - [x] 5. Sync and insights workers, Ads table
-- [ ] 6. Dashboard
+- [x] 6. Dashboard
 - [ ] 7. Creatives library and upload pipeline
 - [ ] 8. Presets, naming and ad set templates
 - [ ] 9. Launch builder and runner

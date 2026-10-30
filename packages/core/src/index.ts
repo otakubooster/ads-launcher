@@ -5,3 +5,4 @@ export * from "./sync";
 export * from "./dates";
 export * from "./queues";
 export * from "./objects";
+export * from "./fx";

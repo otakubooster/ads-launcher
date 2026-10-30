@@ -69,9 +69,11 @@ type Props = {
   range: DateRange;
   parentSelection: { campaignIds: string[]; adsetIds: string[] };
   hasAccounts: boolean;
+  /** Opens this row's drawer on load (links from the dashboard). */
+  initialOpenId?: string;
 };
 
-export function AdsView({ level, rows: initialRows, budgets, views, canEdit, range, parentSelection, hasAccounts }: Props) {
+export function AdsView({ level, rows: initialRows, budgets, views, canEdit, range, parentSelection, hasAccounts, initialOpenId }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -92,7 +94,7 @@ export function AdsView({ level, rows: initialRows, budgets, views, canEdit, ran
   const ownSelection = level === "campaign" ? parentSelection.campaignIds : level === "adset" ? parentSelection.adsetIds : [];
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>(() => Object.fromEntries(ownSelection.map((id) => [id, true])));
   const [activeId, setActiveId] = React.useState<string | null>(null);
-  const [drawerId, setDrawerId] = React.useState<string | null>(null);
+  const [drawerId, setDrawerId] = React.useState<string | null>(initialOpenId ?? null);
   const [confirm, setConfirm] = React.useState<TableRow[] | null>(null);
   const [budgetEdit, setBudgetEdit] = React.useState<{ row: TableRow; rect: DOMRect } | null>(null);
   const [saveOpen, setSaveOpen] = React.useState(false);
