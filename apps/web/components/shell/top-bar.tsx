@@ -1,6 +1,7 @@
 "use client";
 
-import { Menu, Search } from "lucide-react";
+import Link from "next/link";
+import { Menu, Search, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/kbd";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -13,7 +14,7 @@ import { SidebarContent } from "./sidebar";
 import { SyncStatus } from "./sync-status";
 
 export function TopBar() {
-  const { setCommandOpen, mobileNavOpen, setMobileNavOpen } = useShell();
+  const { setCommandOpen, mobileNavOpen, setMobileNavOpen, pendingApprovals, user } = useShell();
   const mod = useModKey();
 
   return (
@@ -33,6 +34,14 @@ export function TopBar() {
       </div>
 
       <div className="ml-auto flex items-center gap-2">
+        {pendingApprovals > 0 && (user.role === "owner" || user.role === "admin") && (
+          <Button asChild variant="ghost" className="text-amber-11 hover:text-amber-12">
+            <Link href="/approvals">
+              <ShieldAlert />
+              {pendingApprovals} to approve
+            </Link>
+          </Button>
+        )}
         <DateRangePicker />
         <AttributionChip />
         <SyncStatus />

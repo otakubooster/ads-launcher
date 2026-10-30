@@ -8,7 +8,19 @@ export type ActionResult<T = undefined> =
   | { ok: false; error: { title: string; detail: string; fix?: string } };
 
 /** Turns any thrown error into what failed, why and the fix, for the UI. */
+/** An error whose copy is written for people: shown as is. */
+export class UserError extends Error {
+  constructor(
+    readonly title: string,
+    readonly detail: string,
+    readonly fix?: string,
+  ) {
+    super(detail);
+  }
+}
+
 export function toActionError(e: unknown): ActionResult<never> {
+  if (e instanceof UserError) return { ok: false, error: { title: e.title, detail: e.detail, fix: e.fix } };
   if (e instanceof MetaApiError) return { ok: false, error: describeMetaError(e) };
   if (e instanceof ForbiddenError) return { ok: false, error: { title: "Not allowed", detail: e.message } };
   if (e instanceof ZodError) {

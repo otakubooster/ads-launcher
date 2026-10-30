@@ -180,4 +180,14 @@ describe("runLaunch", () => {
     await db.update(launchItems).set({ status: "failed" }).where(eq(launchItems.idempotencyKey, `${launchId}:campaign:0`));
     await expect(activateLaunch(db, launchId, { actorId: ownerId, source: "ui", client: fast.client, metaAccountId: "act_200000000000001" })).rejects.toThrow(/every item created/);
   });
+
+  it("stops at the kill switch and leaves the rest pending", async () => {
+    const { launchId } = await newLaunch({ ...draft(), creatives: { groups: groups.slice(0, 3) } });
+    let checks = 0;
+    // Trips after the media and the campaign: ad sets never start.
+    const result = await runLaunch(db, storageFromEnv(), launchId, { ...fast, shouldStop: async () => ++checks > 7 });
+    expect(result.status).toBe("stopped");
+    const items = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId));
+    expect(items.some((i) => i.status === "pending")).toBe(true);
+  });
 });

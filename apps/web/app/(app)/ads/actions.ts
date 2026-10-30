@@ -17,9 +17,10 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { DateRange } from "@/lib/date-range";
-import { type ActionResult, runAction } from "@/lib/server/action-result";
+import { type ActionResult, UserError, runAction } from "@/lib/server/action-result";
 import { requireRole } from "@/lib/server/auth";
 import { asUser, getDb } from "@/lib/server/db";
+import { assertNotKilled, guardActivate, guardBudget } from "@/lib/server/guard";
 import { getQueues } from "@/lib/server/queue";
 
 const level = z.enum(["campaign", "adset", "ad"]);
@@ -64,8 +65,15 @@ async function logged(userId: string, entityLevel: ObjectLevel, objectId: string
   }
 }
 
-function summarize(done: number, failed: Failure[], verb: string): ActionResult<{ failed: Failure[] }> {
-  if (failed.length === 0) return { ok: true, message: `${verb} ${done} ${done === 1 ? "item" : "items"}.`, data: { failed } };
+function summarize(done: number, failed: Failure[], verb: string, pending = 0): ActionResult<{ failed: Failure[] }> {
+  const waiting = pending ? `${pending} sent for approval` : "";
+  if (failed.length === 0) {
+    const message =
+      done || !pending
+        ? `${verb} ${done} ${done === 1 ? "item" : "items"}${waiting ? `; ${waiting}` : ""}.`
+        : `${pending} ${pending === 1 ? "change" : "changes"} sent for approval: an owner or admin will review ${pending === 1 ? "it" : "them"}.`;
+    return { ok: true, message, data: { failed } };
+  }
   const first = failed[0]!;
   return {
     ok: false,
@@ -78,6 +86,7 @@ function summarize(done: number, failed: Failure[], verb: string): ActionResult<
 }
 
 function failureOf(id: string, e: unknown): Failure {
+  if (e instanceof UserError) return { id, title: e.title, detail: [e.detail, e.fix].filter(Boolean).join(" ") };
   if (e instanceof MetaApiError) {
     const d = describeMetaError(e);
     return { id, title: d.title, detail: `${d.detail} ${d.fix}` };
@@ -89,10 +98,17 @@ export async function setStatusAction(objectLevel: string, objectIds: string[], 
   return runAction(async () => {
     const session = await requireRole("owner", "admin", "buyer");
     const input = z.object({ level, ids, status: z.enum(["ACTIVE", "PAUSED"]) }).parse({ level: objectLevel, ids: objectIds, status });
+    if (input.status === "ACTIVE") await assertNotKilled();
     const failed: Failure[] = [];
     let done = 0;
+    let pending = 0;
     for (const id of input.ids) {
       try {
+        // Each activation is checked against the total the previous ones left.
+        if (input.status === "ACTIVE" && (await guardActivate(session, input.level, id)).status === "approval") {
+          pending++;
+          continue;
+        }
         await logged(session.userId, input.level, id, status === "ACTIVE" ? "activate" : "pause", () => changeStatus(getDb(), input.level, id, input.status));
         done++;
       } catch (e) {
@@ -100,7 +116,7 @@ export async function setStatusAction(objectLevel: string, objectIds: string[], 
       }
     }
     revalidatePath("/ads");
-    return summarize(done, failed, status === "ACTIVE" ? "Activated" : "Paused");
+    return summarize(done, failed, status === "ACTIVE" ? "Activated" : "Paused", pending);
   });
 }
 
@@ -110,6 +126,9 @@ export async function setBudgetAction(objectLevel: string, objectId: string, dai
     const input = z
       .object({ level: z.enum(["campaign", "adset"]), id: z.uuid(), dailyBudget: z.number().int().positive() })
       .parse({ level: objectLevel, id: objectId, dailyBudget });
+    await assertNotKilled();
+    const guard = await guardBudget(session, input.level, input.id, input.dailyBudget);
+    if (guard.status === "approval") return { ok: true, message: `Sent for approval. ${guard.detail}` } satisfies ActionResult;
     const change = await logged(session.userId, input.level, input.id, "update_budget", () => changeDailyBudget(getDb(), input.level, input.id, input.dailyBudget));
     revalidatePath("/ads");
     return { ok: true, message: `Budget updated for ${change.name}.` } satisfies ActionResult;
@@ -123,13 +142,19 @@ export async function adjustBudgetsAction(objectLevel: string, objectIds: string
     const input = z
       .object({ level: z.enum(["campaign", "adset"]), ids, pct: z.number().min(-90).max(500), current: z.record(z.string(), z.number()) })
       .parse({ level: objectLevel, ids: objectIds, pct, current });
+    await assertNotKilled();
     const failed: Failure[] = [];
     let done = 0;
+    let pending = 0;
     for (const id of input.ids) {
       const before = input.current[id];
       if (!before) continue;
       try {
         const next = Math.max(100, Math.round(before * (1 + input.pct / 100)));
+        if ((await guardBudget(session, input.level, id, next)).status === "approval") {
+          pending++;
+          continue;
+        }
         await logged(session.userId, input.level, id, "update_budget", () => changeDailyBudget(getDb(), input.level, id, next));
         done++;
       } catch (e) {
@@ -137,7 +162,7 @@ export async function adjustBudgetsAction(objectLevel: string, objectIds: string
       }
     }
     revalidatePath("/ads");
-    return summarize(done, failed, "Updated budgets on");
+    return summarize(done, failed, "Updated budgets on", pending);
   });
 }
 

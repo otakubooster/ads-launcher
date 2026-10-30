@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { adAccounts, apiUsage, metaAssets, metaConnections, users } from "@fahd/db/schema";
+import { adAccounts, apiUsage, appSettings, metaAssets, metaConnections, users } from "@fahd/db/schema";
 import { REQUIRED_PERMISSIONS } from "@fahd/meta";
-import { asc, count, desc } from "drizzle-orm";
+import { asc, count, desc, eq } from "drizzle-orm";
 import { PageHeader } from "@/components/page-header";
 import { requireSession } from "@/lib/server/auth";
 import { asUser } from "@/lib/server/db";
-import { AccountsSection, ConnectionsSection, SettingsNav, TeamSection, UsageSection } from "./sections";
+import { AccountsSection, ConnectionsSection, KillSwitchSection, SettingsNav, TeamSection, UsageSection } from "./sections";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -34,7 +34,8 @@ export default async function SettingsPage() {
       .selectDistinctOn([apiUsage.adAccountId], { adAccountId: apiUsage.adAccountId, pct: apiUsage.accUtilPct, at: apiUsage.recordedAt, tier: apiUsage.tier })
       .from(apiUsage)
       .orderBy(apiUsage.adAccountId, desc(apiUsage.recordedAt));
-    return { connections, assets, accounts, members, usage };
+    const [kill] = await tx.select().from(appSettings).where(eq(appSettings.key, "kill_switch"));
+    return { connections, assets, accounts, members, usage, kill };
   });
 
   const role = session.role;
@@ -72,6 +73,7 @@ export default async function SettingsPage() {
               launchEnabled: a.launchEnabled,
             }))}
           />
+          <KillSwitchSection on={Boolean((data.kill?.value as { on?: boolean } | undefined)?.on)} since={data.kill?.updatedAt.toISOString() ?? null} canFlip={role === "owner"} />
           <TeamSection
             canManage={role === "owner" || role === "admin"}
             canCreateOwners={role === "owner"}

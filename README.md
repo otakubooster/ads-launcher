@@ -80,5 +80,5 @@ Sessions follow *Claude Code playbook → Session order* in the spec.
 - [x] 8. Presets, naming and ad set templates
 - [x] 9. Launch builder and runner
 - [x] 10. Launch log
-- [ ] 11. Guardrails, approvals, kill switch, alerts
+- [x] 11. Guardrails, approvals, kill switch, alerts
 - [ ] 12. Polish pass

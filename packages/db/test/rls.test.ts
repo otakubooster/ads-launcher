@@ -23,12 +23,12 @@ beforeAll(async () => {
 });
 
 describe("schema", () => {
-  it("creates all 20 tables with RLS enabled", async () => {
+  it("creates all 23 tables with RLS enabled", async () => {
     const rows = await db.execute<{ relname: string; relrowsecurity: boolean }>(sql`
       select c.relname, c.relrowsecurity from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relkind = 'r' order by 1`);
-    expect(rows.rows).toHaveLength(20);
+    expect(rows.rows).toHaveLength(23);
     expect(rows.rows.filter((r) => !r.relrowsecurity)).toEqual([]);
   });
 
@@ -182,6 +182,49 @@ describe("guardrails and connections", () => {
       tx.insert(s.metaConnections).values(row).returning({ id: s.metaConnections.id }),
     );
     expect(asOwner.ok).toBe(true);
+  });
+});
+
+describe("approvals, kill switch and alerts", () => {
+  const request = (by: string) => ({ adAccountId: firstAccountId, requestedBy: by, kind: "budget" as const, entityLevel: "adset" as const, entityId: firstAccountId, entityName: "x", payload: { dailyBudget: 10_000, before: 5_000 }, increase: 5_000 });
+
+  it("buyers request approval only for themselves; only managers decide", async () => {
+    expect((await asUser(db, buyer.id, (tx) => tx.insert(s.approvalRequests).values(request(buyer.id)))).ok).toBe(true);
+    const spoofed = await asUser(db, buyer.id, (tx) => tx.insert(s.approvalRequests).values(request(owner.id)));
+    expect(!spoofed.ok && spoofed.error).toMatch(DENIED);
+    const preApproved = await asUser(db, buyer.id, (tx) => tx.insert(s.approvalRequests).values({ ...request(buyer.id), status: "approved" }));
+    expect(!preApproved.ok && preApproved.error).toMatch(DENIED);
+
+    const decide = (who: string) =>
+      asUser(db, who, async (tx) => {
+        const [r] = await tx.insert(s.approvalRequests).values(request(who)).returning({ id: s.approvalRequests.id });
+        return tx
+          .update(s.approvalRequests)
+          .set({ status: "approved", decidedBy: who, decidedAt: new Date() })
+          .where(eq(s.approvalRequests.id, r!.id))
+          .returning({ id: s.approvalRequests.id });
+      });
+    expect(await decide(buyer.id)).toEqual({ ok: true, value: [] });
+    const byAdmin = await decide(admin.id);
+    expect(byAdmin.ok && byAdmin.value).toHaveLength(1);
+    // A decision can't rewrite what was asked for.
+    const rewrite = await asUser(db, admin.id, (tx) => tx.update(s.approvalRequests).set({ increase: 1 }));
+    expect(!rewrite.ok && rewrite.error).toMatch(DENIED);
+  });
+
+  it("only owners flip the kill switch", async () => {
+    const flip = (who: string) => asUser(db, who, (tx) => tx.insert(s.appSettings).values({ key: "kill_switch", value: { on: true }, updatedBy: who }));
+    expect((await flip(owner.id)).ok).toBe(true);
+    const r = await flip(admin.id);
+    expect(!r.ok && r.error).toMatch(DENIED);
+  });
+
+  it("alerts are readable by managers and written by the system only", async () => {
+    await asServiceRole(db, (tx) => tx.insert(s.alerts).values({ kind: "token", dedupeKey: "k1", subject: "s", body: "b", recipients: [] }));
+    const write = await asUser(db, owner.id, (tx) => tx.insert(s.alerts).values({ kind: "token", dedupeKey: "k2", subject: "s", body: "b", recipients: [] }));
+    expect(!write.ok && write.error).toMatch(DENIED);
+    const read = await asUser(db, buyer.id, (tx) => tx.select().from(s.alerts));
+    expect(read).toEqual({ ok: true, value: [] });
   });
 });
 

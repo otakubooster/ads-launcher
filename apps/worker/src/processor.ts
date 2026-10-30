@@ -1,7 +1,9 @@
 import {
+  ALERTS,
   backfillInsights,
   markConnectionBroken,
   runLaunch,
+  sendAlert,
   storageFromEnv,
   syncAccountObjects,
   syncInsights,
@@ -35,10 +37,9 @@ export async function processAccountJob(db: AnyDb, data: AccountJobData, { shoul
     }
   } catch (e) {
     if (e instanceof MetaApiError) {
-      if (e.kind === "auth") {
-        const [account] = await db.select({ connectionId: adAccounts.connectionId }).from(adAccounts).where(eq(adAccounts.id, data.adAccountId));
-        if (account) await markConnectionBroken(db, account.connectionId, e);
-      }
+      const [account] = await db.select({ connectionId: adAccounts.connectionId, name: adAccounts.name }).from(adAccounts).where(eq(adAccounts.id, data.adAccountId));
+      if (e.kind === "auth" && account) await markConnectionBroken(db, account.connectionId, e);
+      if (e.code === 368 && account) await sendAlert(db, ALERTS.policyBlock(data.adAccountId, account.name, e.userMessage ?? e.message));
       if (FINAL_KINDS.has(e.kind)) throw new UnrecoverableError(`${e.kind}: ${e.message}`);
     }
     throw e;

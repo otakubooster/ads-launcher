@@ -79,7 +79,9 @@ export async function loadDashboard(userId: string, filters: Filters): Promise<D
     const connections = (await tx.execute(sql`select business_name, status from meta_connections where status <> 'active'`)) as unknown as { business_name: string; status: string }[];
     const launches = (await tx.execute(sql`
       select id, name, status from launches where status in ('failed', 'partial') and created_at > now() - interval '7 days' order by created_at desc limit 5`)) as unknown as { id: string; name: string; status: string }[];
-    return { accounts, daily, top, connections, launches };
+    const [pending] = (await tx.execute(sql`select count(*)::int as n from approval_requests where status = 'pending'`)) as unknown as { n: number }[];
+    const [kill] = (await tx.execute(sql`select (value->>'on')::boolean as on from app_settings where key = 'kill_switch'`)) as unknown as { on: boolean }[];
+    return { accounts, daily, top, connections, launches, pendingApprovals: pending?.n ?? 0, killSwitchOn: Boolean(kill?.on) };
   });
 
   const rates = await loadRates(reporting, { redis: getQueues()?.connection });
@@ -128,6 +130,18 @@ export async function loadDashboard(userId: string, filters: Filters): Promise<D
     .slice(0, 8);
 
   const alerts: Alert[] = [];
+  if (data.killSwitchOn) {
+    alerts.push({ id: "kill-switch", tone: "negative", title: "Kill switch is on", detail: "Queues and launches are stopped. An owner can turn it off in Settings.", href: "/settings#kill-switch" });
+  }
+  if (data.pendingApprovals > 0) {
+    alerts.push({
+      id: "approvals",
+      tone: "warning",
+      title: `${data.pendingApprovals} ${data.pendingApprovals === 1 ? "change waits" : "changes wait"} for approval`,
+      detail: "Buyers' spend increases above an account's approval threshold.",
+      href: "/approvals",
+    });
+  }
   for (const c of data.connections) {
     alerts.push({
       id: `conn-${c.business_name}`,

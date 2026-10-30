@@ -1,9 +1,9 @@
 import {
-  KILL_SWITCH_KEY,
   Queues,
   SCHEDULER_QUEUE,
   accountQueueName,
   addDays,
+  killSwitchState,
   quarterHourBucket,
   redisConnection,
   syncConnectionAssets,
@@ -25,8 +25,9 @@ const accountWorkers = new Map<string, Worker>();
 const log = (msg: string, extra: Record<string, unknown> = {}) =>
   console.log(JSON.stringify({ at: new Date().toISOString(), msg, ...extra }));
 
+/** Owners flip it in Settings; running launches check it between steps. */
 async function killSwitchOn() {
-  return (await connection.get(KILL_SWITCH_KEY)) !== null;
+  return (await killSwitchState(db)).on;
 }
 
 /** One worker per ad account queue: one job at a time, at most 2 per second. */

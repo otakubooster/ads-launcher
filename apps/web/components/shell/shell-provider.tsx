@@ -32,6 +32,8 @@ type ShellState = {
   query: string;
   lastSyncedAt: Date | null;
   usagePct: number | null;
+  killSwitchOn: boolean;
+  pendingApprovals: number;
   user: ShellUser;
 };
 
@@ -51,10 +53,12 @@ export type ShellProviderProps = {
   accounts: ScopeAccount[];
   lastSyncedAt: string | null;
   usagePct: number | null;
+  killSwitchOn: boolean;
+  pendingApprovals: number;
   children: React.ReactNode;
 };
 
-export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, usagePct, children }: ShellProviderProps) {
+export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, usagePct, killSwitchOn, pendingApprovals, children }: ShellProviderProps) {
   const [sidebarCollapsed, setCollapsed] = React.useState(defaultCollapsed);
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
@@ -103,9 +107,11 @@ export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, 
       query,
       lastSyncedAt: lastSyncedAt ? new Date(lastSyncedAt) : null,
       usagePct,
+      killSwitchOn,
+      pendingApprovals,
       user,
     }),
-    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, setSelectedAccountIds, datePreset, setDatePreset, compare, setCompare, query, accounts, lastSyncedAt, usagePct, user],
+    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, setSelectedAccountIds, datePreset, setDatePreset, compare, setCompare, query, accounts, lastSyncedAt, usagePct, killSwitchOn, pendingApprovals, user],
   );
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

@@ -25,3 +25,5 @@ export const entityLevel = pgEnum("entity_level", [
 ]);
 export const assetKind = pgEnum("asset_kind", ["page", "instagram", "pixel"]);
 export const tableLevel = pgEnum("table_level", ["campaign", "adset", "ad"]);
+export const approvalKind = pgEnum("approval_kind", ["activate", "budget", "launch_activate"]);
+export const approvalStatus = pgEnum("approval_status", ["pending", "approved", "rejected", "failed"]);

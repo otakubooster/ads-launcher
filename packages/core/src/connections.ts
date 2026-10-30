@@ -13,6 +13,7 @@ import {
 import { and, eq, lt, sql } from "drizzle-orm";
 import { decryptToken } from "@fahd/shared";
 import { appSecret, clientForConnection } from "./meta-client";
+import { ALERTS, sendAlert } from "./alerts";
 import type { AnyDb } from "./types";
 
 export type TokenCheck = {
@@ -75,8 +76,10 @@ export async function syncConnectionAssets(db: AnyDb, connectionId: string, clie
             accountStatus: sql`excluded.account_status`,
           },
         })
-        .returning({ id: adAccounts.id, metaId: adAccounts.metaId })
+        .returning({ id: adAccounts.id, metaId: adAccounts.metaId, name: adAccounts.name, accountStatus: adAccounts.accountStatus })
     : [];
+  // 1 is active; anything else (disabled, unsettled, closed…) stops delivery.
+  for (const a of accountRows) if (a.accountStatus !== 1) await sendAlert(db, ALERTS.accountDisabled(a.id, a.name, a.accountStatus));
 
   const assets: (typeof metaAssets.$inferInsert)[] = [];
   for (const page of await listOwnedPages(meta, connection.businessId)) {
@@ -119,7 +122,8 @@ export async function syncConnectionAssets(db: AnyDb, connectionId: string, clie
 
 /** Marks a connection broken after an auth error so every job for it stops. */
 export async function markConnectionBroken(db: AnyDb, connectionId: string, error: MetaApiError) {
-  await db.update(metaConnections).set({ status: "broken" }).where(eq(metaConnections.id, connectionId));
+  const [conn] = await db.update(metaConnections).set({ status: "broken" }).where(eq(metaConnections.id, connectionId)).returning({ name: metaConnections.businessName });
+  await sendAlert(db, ALERTS.tokenFailure(connectionId, conn?.name ?? "Business Manager", error.message));
   await db.insert(changeLog).values({
     source: "system",
     entityLevel: "meta_connection",
