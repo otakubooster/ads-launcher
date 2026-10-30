@@ -1,29 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ensureConnected, signIn } from "./helpers";
+import { ensureConnected, makeImage, signIn } from "./helpers";
 
-/** Makes real media in the browser: PNGs from a canvas, a short WebM from MediaRecorder. */
-async function makeImage(page: Page, width: number, height: number, label: string) {
-  const dataUrl = await page.evaluate(
-    async ([w, h, text]) => {
-      const canvas = new OffscreenCanvas(w as number, h as number);
-      const ctx = canvas.getContext("2d")!;
-      ctx.fillStyle = "#5b5bd6";
-      ctx.fillRect(0, 0, w as number, h as number);
-      ctx.fillStyle = "#fff";
-      ctx.font = "120px sans-serif";
-      ctx.fillText(String(text), 80, 300);
-      const blob = await canvas.convertToBlob({ type: "image/png" });
-      return await new Promise<string>((r) => {
-        const fr = new FileReader();
-        fr.onload = () => r(String(fr.result));
-        fr.readAsDataURL(blob);
-      });
-    },
-    [width, height, label] as const,
-  );
-  return Buffer.from(dataUrl.split(",")[1]!, "base64");
-}
-
+/** A short WebM from MediaRecorder. */
 async function makeVideo(page: Page) {
   const dataUrl = await page.evaluate(async () => {
     const canvas = document.createElement("canvas");

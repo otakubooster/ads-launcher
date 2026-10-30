@@ -184,7 +184,9 @@ export function createFakeGraph() {
       if (method === "GET" && edge === "instagram_accounts") return [200, page(list("instagram", head).map(strip))];
       if (method === "GET" && edge === "adspixels") return [200, page(list("pixel", head).map(strip))];
       if (method === "GET" && (edge === "campaigns" || edge === "adsets" || edge === "ads")) {
-        return [200, page(list(edge.slice(0, -1), head).filter((o) => o.status !== "DELETED").map(strip))];
+        const filtering = (json("filtering") as { field: string; operator: string; value: string }[] | null) ?? [];
+        const byName = filtering.find((f) => f.field === "name" && f.operator === "EQUAL")?.value;
+        return [200, page(list(edge.slice(0, -1), head).filter((o) => o.status !== "DELETED" && (!byName || o.name === byName)).map(strip))];
       }
       if (method === "GET" && edge === "insights") {
         const range = json("time_range") as { since: string; until: string } | null;
@@ -202,7 +204,7 @@ export function createFakeGraph() {
         if (params.status !== "PAUSED") return [400, graphError(100, "Fake Graph only accepts PAUSED creates")];
         if (!params.name) return [400, graphError(100, "Invalid parameter", { error_user_title: "Name missing", error_user_msg: "Give this object a name." })];
         const type = edge.slice(0, -1);
-        const obj: Obj = { id: nextId(), type, account_id: head, effective_status: "PAUSED" };
+        const obj: Obj = { id: nextId(), type, account_id: head, effective_status: "PAUSED", created_time: new Date().toISOString() };
         for (const [k, v] of Object.entries(params)) obj[k] = json(k) ?? v;
         if (type === "ad") {
           const creativeId = (obj.creative as { creative_id?: string })?.creative_id;
@@ -266,12 +268,16 @@ export function createFakeGraph() {
     if (method === "GET" && edge === "previews") {
       return [200, { data: [{ body: `<iframe src="about:blank" width="320" height="568" data-format="${params.ad_format}"></iframe>` }] }];
     }
+    if (method === "GET" && (edge === "adsets" || edge === "ads") && (obj.type === "campaign" || obj.type === "adset")) {
+      const parentKey = obj.type === "campaign" ? "campaign_id" : "adset_id";
+      return [200, page([...state.objects.values()].filter((o) => o.type === edge.slice(0, -1) && o[parentKey] === obj.id && o.status !== "DELETED").map(strip))];
+    }
     if (method === "POST" && edge === "copies") {
       if (params.status_option !== "PAUSED") return [400, graphError(100, "Fake Graph only accepts PAUSED copies")];
-      const copy: Obj = { ...obj, id: nextId(), name: `${String(obj.name)} - Copy`, status: "PAUSED", effective_status: "PAUSED" };
+      const copy: Obj = { ...obj, id: nextId(), name: `${String(obj.name)} - Copy`, status: "PAUSED", effective_status: "PAUSED", created_time: new Date().toISOString() };
       if (params.campaign_id) copy.campaign_id = params.campaign_id;
       state.objects.set(copy.id, copy);
-      return [200, { copied_adset_id: copy.id }];
+      return [200, obj.type === "campaign" ? { copied_campaign_id: copy.id } : obj.type === "ad" ? { copied_ad_id: copy.id } : { copied_adset_id: copy.id }];
     }
     if (method === "GET" && !edge) return [200, strip(obj)];
     if (method === "POST" && !edge) {

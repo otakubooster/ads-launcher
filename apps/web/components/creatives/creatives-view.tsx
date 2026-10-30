@@ -343,20 +343,32 @@ const STATUS_LABEL: Record<Row["status"], string> = {
 };
 
 /** Drop files or a folder; each is measured, hashed, uploaded straight to storage, then saved. */
-function UploadDialog({ open, onOpenChange, brands, onDone }: { open: boolean; onOpenChange: (o: boolean) => void; brands: Option[]; onDone: () => void }) {
-  const [brandId, setBrandId] = React.useState(brands[0]?.id ?? "");
+export function UploadDialog({
+  open,
+  onOpenChange,
+  brands,
+  onDone,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  brands: Option[];
+  onDone: (saved: { id: string; groupKey: string }[]) => void;
+}) {
+  const [picked, setBrandId] = React.useState(brands[0]?.id ?? "");
+  // The launch builder passes only the preset's brand, which can change while mounted.
+  const brandId = brands.some((b) => b.id === picked) ? picked : (brands[0]?.id ?? "");
   const [rows, setRows] = React.useState<Row[]>([]);
   const [dragging, setDragging] = React.useState(false);
   const patch = (key: string, p: Partial<Row>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
 
-  async function processFile(row: Row) {
+  async function processFile(row: Row): Promise<string | null> {
     const { file } = row;
     try {
       const meta = await readMeta(file);
       const ratio = ratioOf(meta.width, meta.height);
       const issues = validateCreative({ fileName: file.name, kind: meta.kind, width: meta.width, height: meta.height, durationS: meta.durationS, sizeBytes: file.size });
       patch(row.key, { ratio, issues, status: "hashing" });
-      if (issues.some((i) => i.level === "error")) return patch(row.key, { status: "error", error: issues.find((i) => i.level === "error")!.message });
+      if (issues.some((i) => i.level === "error")) return void patch(row.key, { status: "error", error: issues.find((i) => i.level === "error")!.message }), null;
       const sha256 = await sha256File(file, (f) => patch(row.key, { progress: f }));
       const input: FileInput = {
         brandId,
@@ -371,17 +383,19 @@ function UploadDialog({ open, onOpenChange, brands, onDone }: { open: boolean; o
         hasPoster: meta.poster !== null,
       };
       const prepared = await prepareUpload(input);
-      if (!prepared.ok) return patch(row.key, { status: "error", error: `${prepared.error.title}: ${prepared.error.detail}` });
+      if (!prepared.ok) return void patch(row.key, { status: "error", error: `${prepared.error.title}: ${prepared.error.detail}` }), null;
       const p = prepared.data!;
-      if ("duplicateOf" in p) return patch(row.key, { status: "duplicate", progress: 1 });
+      if ("duplicateOf" in p) return void patch(row.key, { status: "duplicate", progress: 1 }), p.duplicateOf;
       patch(row.key, { status: "uploading", progress: 0 });
       await putWithProgress(p.upload.url, file, p.upload.headers, (f) => patch(row.key, { progress: f }));
       if (p.poster && meta.poster) await putWithProgress(p.poster.url, meta.poster, p.poster.headers, () => {});
       patch(row.key, { status: "saving" });
       const saved = await finishUpload({ ...input, id: p.id, storagePath: p.storagePath, posterPath: p.poster?.path ?? null });
       patch(row.key, saved.ok ? { status: "done", progress: 1 } : { status: "error", error: saved.error.detail });
+      return saved.ok ? (saved.data?.id ?? null) : null;
     } catch (e) {
       patch(row.key, { status: "error", error: e instanceof Error ? e.message : String(e) });
+      return null;
     }
   }
 
@@ -391,12 +405,16 @@ function UploadDialog({ open, onOpenChange, brands, onDone }: { open: boolean; o
     setRows((rs) => [...rs.filter((r) => !added.some((a) => a.key === r.key)), ...added]);
     // Two at a time: fast enough, and gentle on memory for large videos.
     const queue = [...added];
+    const saved: { id: string; groupKey: string }[] = [];
     await Promise.all(
       [0, 1].map(async () => {
-        for (let next = queue.shift(); next; next = queue.shift()) await processFile(next);
+        for (let next = queue.shift(); next; next = queue.shift()) {
+          const id = await processFile(next);
+          if (id) saved.push({ id, groupKey: next.groupKey });
+        }
       }),
     );
-    onDone();
+    onDone(saved);
   }
 
   const groups = pairCreatives(rows.filter((r) => r.status !== "error"));

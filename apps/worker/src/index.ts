@@ -39,7 +39,7 @@ function ensureAccountWorker(adAccountId: string) {
         await job.moveToDelayed(Date.now() + 60_000, token);
         throw new DelayedError();
       }
-      return processAccountJob(db, job.data);
+      return processAccountJob(db, job.data, { shouldStop: killSwitchOn });
     },
     {
       connection,

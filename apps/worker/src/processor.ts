@@ -1,6 +1,7 @@
 import {
   backfillInsights,
   markConnectionBroken,
+  runLaunch,
   storageFromEnv,
   syncAccountObjects,
   syncInsights,
@@ -16,7 +17,7 @@ import { eq } from "drizzle-orm";
 /** Errors that will fail the same way on every retry (docs/spec.md → Error handling). */
 const FINAL_KINDS = new Set(["auth", "permission", "validation", "policy", "guard"]);
 
-export async function processAccountJob(db: AnyDb, data: AccountJobData): Promise<unknown> {
+export async function processAccountJob(db: AnyDb, data: AccountJobData, { shouldStop }: { shouldStop?: () => Promise<boolean> } = {}): Promise<unknown> {
   try {
     switch (data.kind) {
       case "sync-objects":
@@ -27,8 +28,10 @@ export async function processAccountJob(db: AnyDb, data: AccountJobData): Promis
         return { rows: await backfillInsights(db, data.adAccountId, data) };
       case "upload":
         return await uploadCreativeToAccount(db, storageFromEnv(), data.creativeId, data.adAccountId);
+      case "launch":
+        return await runLaunch(db, storageFromEnv(), data.launchId, { shouldStop });
       default:
-        throw new UnrecoverableError(`No processor for ${data.kind} yet`);
+        throw new UnrecoverableError(`No processor for ${(data as { kind: string }).kind}`);
     }
   } catch (e) {
     if (e instanceof MetaApiError) {
