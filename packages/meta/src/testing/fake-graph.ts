@@ -241,6 +241,12 @@ export function createFakeGraph() {
       }
     }
 
+    const report = head ? reports.get(head) : undefined;
+    if (report && method === "GET" && edge === "insights") {
+      return [200, page(list("ad", report.accountId).flatMap((ad) => days(report.since, report.until).map((d) => insightRow(ad, d)).filter(Boolean)))];
+    }
+    if (report && method === "GET" && !edge) return [200, { id: head, async_status: "Job Completed", async_percent_completion: 100 }];
+
     const obj = head ? state.objects.get(head) : undefined;
     if (!obj) return [400, graphError(100, `Unsupported request. Object with ID '${head}' does not exist`)];
 
@@ -254,13 +260,6 @@ export function createFakeGraph() {
     }
     if (method === "GET" && edge === "previews") {
       return [200, { data: [{ body: `<iframe src="about:blank" width="320" height="568" data-format="${params.ad_format}"></iframe>` }] }];
-    }
-    if (method === "GET" && edge === "insights" && reports.has(obj.id)) {
-      const r = reports.get(obj.id)!;
-      return [200, page(list("ad", r.accountId).flatMap((ad) => days(r.since, r.until).map((d) => insightRow(ad, d)).filter(Boolean)))];
-    }
-    if (method === "GET" && !edge && reports.has(obj.id)) {
-      return [200, { id: obj.id, async_status: "Job Completed", async_percent_completion: 100 }];
     }
     if (method === "POST" && edge === "copies") {
       if (params.status_option !== "PAUSED") return [400, graphError(100, "Fake Graph only accepts PAUSED copies")];

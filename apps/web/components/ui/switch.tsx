@@ -17,3 +17,35 @@ export function Switch({ className, ...props }: React.ComponentProps<typeof Swit
     </SwitchPrimitive.Root>
   );
 }
+
+/**
+ * The same switch as a plain button: cheap enough to render in every table row.
+ * Use Switch elsewhere.
+ */
+export function RowSwitch({
+  checked,
+  onCheckedChange,
+  className,
+  ...props
+}: Omit<React.ComponentProps<"button">, "onChange"> & { checked: boolean; onCheckedChange: (checked: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      data-state={checked ? "checked" : "unchecked"}
+      onClick={(e) => {
+        e.stopPropagation();
+        onCheckedChange(!checked);
+      }}
+      className={cn(
+        "inline-flex h-5 w-8 shrink-0 items-center rounded-full transition-colors disabled:opacity-50",
+        checked ? "bg-iris-9" : "bg-slate-6",
+        className,
+      )}
+      {...props}
+    >
+      <span className={cn("block size-4 rounded-full bg-white shadow-sm transition-transform", checked ? "translate-x-3.5" : "translate-x-0.5")} />
+    </button>
+  );
+}

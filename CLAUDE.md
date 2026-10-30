@@ -80,5 +80,19 @@ everything created paused. Screens checked in light and dark against the spec.
   client at it; ignored in production.
 - E2E: Playwright starts the fake Graph server and `next dev` with DEV_AUTH; global-setup
   recreates E2E_DATABASE_URL. Use e2e/helpers.ts signIn() and ensureConnected().
+- Worker (apps/worker): one BullMQ queue per ad account (`account-<uuid>`, concurrency 1,
+  limiter 2/s). Scheduler jobs: tick every 15 min (objects + today's insights), assets daily,
+  28-day async backfill nightly. processAccountJob() maps Meta errors: auth marks the
+  connection broken, final kinds throw UnrecoverableError, rate limits back off by
+  retryAfterMs. Without REDIS_URL the web app runs syncs inline (dev, e2e).
+- Ads table: data from lib/server/ads.ts (sums per range in SQL; ratios in lib/metrics.ts,
+  same definitions as the views). Scope and dates live in the URL (lib/filters.ts); selection
+  on campaigns/ad sets is the `campaigns` / `adsets` param that filters the next level.
+  Rows are memoized and virtualized; keep per-row components light (RowSwitch, no Radix
+  tooltips in rows).
+- Drizzle spreads JS arrays into ($1, $2…); pass uuid lists as one '{…}'::uuid[] literal
+  (see anyOf in lib/server/ads.ts).
+- Every Meta write from the UI goes through `logged()` in app/(app)/ads/actions.ts or the
+  same pattern: one change_log row with before, after and Meta's response, also on failure.
 - DB tests run on PGlite (in-memory Postgres) with supabase-shim.sql; test/helpers.ts
   has asUser / asServiceRole, which always roll back. No database server needed.

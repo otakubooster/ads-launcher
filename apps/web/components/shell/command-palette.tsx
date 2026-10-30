@@ -22,7 +22,7 @@ import { useShell } from "./shell-provider";
 export function CommandPalette() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
-  const { commandOpen, setCommandOpen, setShortcutsOpen } = useShell();
+  const { commandOpen, setCommandOpen, setShortcutsOpen, query } = useShell();
 
   function run(action: () => void) {
     setCommandOpen(false);
@@ -68,7 +68,7 @@ export function CommandPalette() {
           <CommandSeparator />
           <CommandGroup heading="Go to">
             {NAV_ITEMS.map((item) => (
-              <CommandItem key={item.href} value={`go ${item.label}`} onSelect={() => run(() => router.push(item.href))}>
+              <CommandItem key={item.href} value={`go ${item.label}`} onSelect={() => run(() => router.push(`${item.href}${query}`))}>
                 <item.icon />
                 {item.label}
                 {item.goKey && (

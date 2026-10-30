@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { filterQuery, parseFilters, writeFilters, type Filters } from "@/lib/filters";
 import type { DatePresetId } from "@/lib/date-range";
 import type { ScopeAccount } from "@/lib/scope";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
@@ -26,6 +28,8 @@ type ShellState = {
   setDatePreset: (preset: DatePresetId) => void;
   compare: boolean;
   setCompare: (compare: boolean) => void;
+  /** "?range=…" to append to in-app links so filters carry across pages. */
+  query: string;
   lastSyncedAt: Date | null;
   usagePct: number | null;
   user: ShellUser;
@@ -55,9 +59,24 @@ export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, 
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const [selectedAccountIds, setSelectedAccountIds] = React.useState<string[]>([]);
-  const [datePreset, setDatePreset] = React.useState<DatePresetId>("last_7d");
-  const [compare, setCompare] = React.useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const filters = parseFilters(searchParams);
+  const { preset: datePreset, compare, accountIds: selectedAccountIds } = filters;
+
+  const setFilters = React.useCallback(
+    (patch: Partial<Filters>) => {
+      const next = writeFilters(searchParams, { ...parseFilters(searchParams), ...patch });
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+  const setSelectedAccountIds = React.useCallback((accountIds: string[]) => setFilters({ accountIds }), [setFilters]);
+  const setDatePreset = React.useCallback((preset: DatePresetId) => setFilters({ preset }), [setFilters]);
+  const setCompare = React.useCallback((value: boolean) => setFilters({ compare: value }), [setFilters]);
+  const query = filterQuery(searchParams);
 
   const setSidebarCollapsed = React.useCallback((collapsed: boolean) => {
     setCollapsed(collapsed);
@@ -81,11 +100,12 @@ export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, 
       setDatePreset,
       compare,
       setCompare,
+      query,
       lastSyncedAt: lastSyncedAt ? new Date(lastSyncedAt) : null,
       usagePct,
       user,
     }),
-    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, datePreset, compare, accounts, lastSyncedAt, usagePct, user],
+    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, setSelectedAccountIds, datePreset, setDatePreset, compare, setCompare, query, accounts, lastSyncedAt, usagePct, user],
   );
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;
