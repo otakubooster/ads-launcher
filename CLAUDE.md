@@ -132,3 +132,10 @@ everything created paused. Screens checked in light and dark against the spec.
 - Builder UI: components/launch/*. Autosave 600 ms after the last edit; changing preset goes
   through changePreset() and remounts the builder (key = presetId). Create buttons sit in the
   sticky summary on the Review step. Phone previews are approximate, not Meta's renderer.
+- Launch log (lib/server/launches.ts, components/launch/launch-log.tsx): polls with
+  router.refresh() every 2 s while a launch is queued or running (works without Supabase
+  Realtime). Runner errors are stored as "title\ndetail\nfix" and shown on three lines.
+  Retry failed items = resetFailedItems + a new queue job (job id needs a suffix: the first
+  run's job still holds the launch id). Activate all = activateLaunch() in core (ads, then
+  new ad sets, then a new campaign; change_log per write, also on failure; sets
+  structure.activatedAt). Duplicate copies the draft without activateAfter/activatedAt.

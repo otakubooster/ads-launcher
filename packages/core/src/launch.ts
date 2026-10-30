@@ -1,4 +1,4 @@
-import { adAccounts, adsetTemplates, changeLog, creatives, launchItems, launches, metaAdsets, metaCampaigns, presets } from "@fahd/db/schema";
+import { adAccounts, adsetTemplates, changeLog, creatives, launchItems, launches, metaAds, metaAdsets, metaCampaigns, presets } from "@fahd/db/schema";
 import type { AdsetTemplateSpec } from "@fahd/db/schema";
 import { MetaApiError, describeMetaError, setStatus, type BatchRequest, type MetaClient, type Params } from "@fahd/meta";
 import type { CopyBlock, LaunchDraft, LaunchPlan } from "@fahd/shared/launch-plan";
@@ -190,7 +190,8 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
       status: "failed",
       attempts: item.attempts + 1,
       errorCode: e instanceof MetaApiError ? e.code : null,
-      errorMessage: d ? `${d.title}: ${d.detail} ${d.fix}`.slice(0, 1000) : (e instanceof Error ? e.message : String(e)).slice(0, 1000),
+      // Title, Meta's message and the fix on separate lines; the launch log shows them apart.
+      errorMessage: d ? [d.title, d.detail, d.fix].join("\n").slice(0, 1000) : (e instanceof Error ? e.message : String(e)).slice(0, 1000),
     });
   };
   const skipSubtree = async (item: Item, reason: string) => {
@@ -418,16 +419,8 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
 
     // 5. Optional activation ("Create & activate"), only when everything was created.
     items = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId));
-    const allDone = items.every((i) => i.status === "done");
-    if (draft.activateAfter && allDone) {
-      for (const level of ["ad", "adset", "campaign"] as const) {
-        for (const item of items.filter((i) => i.level === level && i.metaId)) {
-          if (level === "campaign" && (item.payload as CampaignPayload).source === "existing") continue;
-          if (level === "adset" && (item.payload as AdsetPayload).source === "existing") continue;
-          const res = await setStatus(client, item.metaId!, "ACTIVE", metaAccountId);
-          await db.insert(changeLog).values({ actorId: launch.createdBy, source: "system", entityLevel: level, entityId: item.metaId!, action: "activate", before: { status: "PAUSED" }, after: { status: "ACTIVE", launchId }, metaResponse: res });
-        }
-      }
+    if (draft.activateAfter && items.every((i) => i.status === "done")) {
+      await activateLaunch(db, launchId, { actorId: launch.createdBy, source: "system", client, metaAccountId });
     }
     return await finish(db, launchId);
   } catch (e) {
@@ -437,6 +430,51 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
     }
     throw e;
   }
+}
+
+/**
+ * Activates what a launch created: ads, then new ad sets, then a new campaign, so
+ * nothing spends before its children exist. Existing campaigns and ad sets keep
+ * their status. Each write gets a change_log row, also when Meta refuses it.
+ */
+export async function activateLaunch(
+  db: AnyDb,
+  launchId: string,
+  opts: { actorId: string; source: "ui" | "system"; client?: MetaClient; metaAccountId?: string },
+): Promise<{ activated: number }> {
+  const [launch] = await db.select().from(launches).where(eq(launches.id, launchId));
+  if (!launch) throw new Error("Launch not found");
+  const items = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId));
+  if (!items.length || items.some((i) => i.status !== "done")) {
+    throw new MetaApiError({ kind: "guard", message: "Activate all needs every item created. Retry the failed items first." });
+  }
+  let { client, metaAccountId } = opts;
+  if (!client) {
+    const [preset] = await db.select({ adAccountId: presets.adAccountId }).from(presets).where(eq(presets.id, launch.presetId));
+    ({ client, metaAccountId } = await clientForAdAccount(db, preset!.adAccountId));
+  }
+  const mirror = { campaign: metaCampaigns, adset: metaAdsets, ad: metaAds } as const;
+  let activated = 0;
+  for (const level of ["ad", "adset", "campaign"] as const) {
+    for (const item of items.filter((i) => i.level === level && i.metaId)) {
+      if (level !== "ad" && (item.payload as CampaignPayload | AdsetPayload).source === "existing") continue;
+      const entry = { actorId: opts.actorId, source: opts.source, entityLevel: level, entityId: item.metaId!, action: "activate", before: { status: "PAUSED" }, after: { status: "ACTIVE", launchId } } as const;
+      try {
+        const res = await setStatus(client!, item.metaId!, "ACTIVE", metaAccountId!);
+        await db.insert(changeLog).values({ ...entry, metaResponse: res as object });
+      } catch (e) {
+        await db.insert(changeLog).values({ ...entry, after: { status: "PAUSED", launchId }, metaResponse: { error: e instanceof Error ? e.message : String(e) } });
+        throw e;
+      }
+      await db.update(mirror[level]).set({ status: "ACTIVE", effectiveStatus: "ACTIVE" }).where(eq(mirror[level].metaId, item.metaId!));
+      activated++;
+    }
+  }
+  await db
+    .update(launches)
+    .set({ structure: { ...(launch.structure as object), activatedAt: new Date().toISOString() } })
+    .where(eq(launches.id, launchId));
+  return { activated };
 }
 
 async function finish(db: AnyDb, launchId: string, stopped = false): Promise<RunResult> {

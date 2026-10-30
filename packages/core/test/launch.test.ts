@@ -3,14 +3,14 @@ import { mkdtempSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { adAccounts, brands, creatives, launchItems, launches, metaConnections, presets, users } from "@fahd/db/schema";
+import { adAccounts, brands, changeLog, creatives, launchItems, launches, metaConnections, presets, users } from "@fahd/db/schema";
 import { createTestDb } from "@fahd/db/testing";
 import { FAKE_BUSINESS_ID, createFakeGraph } from "@fahd/meta/testing";
 import { encryptToken } from "@fahd/shared";
 import { EMPTY_DRAFT, buildPlan, type LaunchDraft } from "@fahd/shared/launch-plan";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createLaunchItems, resetFailedItems, runLaunch, storageFromEnv, syncConnectionAssets } from "../src";
+import { activateLaunch, createLaunchItems, resetFailedItems, runLaunch, storageFromEnv, syncConnectionAssets } from "../src";
 
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -131,7 +131,7 @@ describe("runLaunch", () => {
     expect(first.status).toBe("partial");
     const failed = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId));
     const failedAdset = failed.find((i) => i.level === "adset" && i.status === "failed")!;
-    expect(failedAdset.errorMessage).toContain("Budget too low: Your daily budget must be at least $1.00.");
+    expect(failedAdset.errorMessage).toContain("Budget too low\nYour daily budget must be at least $1.00.");
     expect((failedAdset.payload as { name: string }).name).toBe(plan.adsets[0]!.name);
     expect(failed.filter((i) => i.level === "ad" && i.status === "failed")).toHaveLength(5);
     void secondAdset;
@@ -159,5 +159,25 @@ describe("runLaunch", () => {
     const [after] = await db.select().from(launchItems).where(eq(launchItems.id, campaignItem!.id));
     expect(after!.metaId).toBe(id);
     expect(objects("campaign").filter((c) => c.name === plan.campaign.name)).toHaveLength(1);
+  });
+
+  it("Activate all turns on ads, then new ad sets and the campaign, logging each write", async () => {
+    const small = { ...draft(), creatives: { groups: groups.slice(0, 2) } };
+    const { launchId } = await newLaunch(small);
+    await runLaunch(db, storageFromEnv(), launchId, fast);
+    const items = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId));
+    const { activated } = await activateLaunch(db, launchId, { actorId: ownerId, source: "ui", client: fast.client, metaAccountId: "act_200000000000001" });
+    const created = items.filter((i) => i.level !== "creative");
+    expect(activated).toBe(created.length);
+    for (const i of created) expect(fake.objects.get(i.metaId!)!.status).toBe("ACTIVE");
+    const log = await db.select().from(changeLog).where(eq(changeLog.action, "activate"));
+    expect(log.filter((l) => (l.after as { launchId?: string }).launchId === launchId)).toHaveLength(created.length);
+  });
+
+  it("Activate all refuses while an item has failed", async () => {
+    const small = { ...draft(), creatives: { groups: groups.slice(0, 1) } };
+    const { launchId } = await newLaunch(small);
+    await db.update(launchItems).set({ status: "failed" }).where(eq(launchItems.idempotencyKey, `${launchId}:campaign:0`));
+    await expect(activateLaunch(db, launchId, { actorId: ownerId, source: "ui", client: fast.client, metaAccountId: "act_200000000000001" })).rejects.toThrow(/every item created/);
   });
 });
