@@ -1,0 +1,17 @@
+{
+  "name": "fahd-ads-launcher",
+  "private": true,
+  "packageManager": "pnpm@10.28.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @fahd/web dev",
+    "worker": "pnpm --filter @fahd/worker dev",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "e2e": "pnpm --filter @fahd/web e2e"
+  }
+}

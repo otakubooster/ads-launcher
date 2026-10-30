@@ -1,0 +1,209 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Radix Colors: matched light (:root, .light) and dark (.dark) scales. */
+@import "@radix-ui/colors/slate.css";
+@import "@radix-ui/colors/slate-dark.css";
+@import "@radix-ui/colors/iris.css";
+@import "@radix-ui/colors/iris-dark.css";
+@import "@radix-ui/colors/grass.css";
+@import "@radix-ui/colors/grass-dark.css";
+@import "@radix-ui/colors/red.css";
+@import "@radix-ui/colors/red-dark.css";
+@import "@radix-ui/colors/amber.css";
+@import "@radix-ui/colors/amber-dark.css";
+@import "@radix-ui/colors/blue.css";
+@import "@radix-ui/colors/blue-dark.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Sidebar icon rail: on below 1280px, or whenever the user collapses it.
+ * data-sidebar="responsive" | "collapsed" | "expanded" (mobile sheet).
+ */
+@custom-variant rail {
+  @media (width < 80rem) {
+    &:where([data-sidebar="responsive"], [data-sidebar="responsive"] *) {
+      @slot;
+    }
+  }
+  &:where([data-sidebar="collapsed"], [data-sidebar="collapsed"] *) {
+    @slot;
+  }
+}
+
+/*
+ * Design tokens (docs/spec.md → UI design system).
+ * Tailwind's defaults are reset so only spec values exist:
+ * steps 1–2 backgrounds, 3–5 fills, 6–8 borders, 9–10 solids, 11–12 text.
+ */
+@theme {
+  --color-*: initial;
+  --color-white: #fff;
+  --color-black: #000;
+
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SFMono-Regular", monospace;
+
+  --text-*: initial;
+  --text-label: 12px;
+  --text-label--line-height: 16px;
+  --text-ui: 13px;
+  --text-ui--line-height: 20px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-section: 16px;
+  --text-section--line-height: 24px;
+  --text-title: 20px;
+  --text-title--line-height: 28px;
+  --text-title--letter-spacing: -0.01em;
+  --text-kpi: 28px;
+  --text-kpi--line-height: 32px;
+  --text-kpi--letter-spacing: -0.01em;
+
+  --radius-*: initial;
+  --radius-xs: 4px;
+  --radius-control: 6px;
+  --radius-card: 8px;
+  --radius-dialog: 12px;
+
+  --shadow-*: initial;
+  --shadow-float: var(--float-shadow);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@theme inline {
+  --color-slate-1: var(--slate-1);
+  --color-slate-2: var(--slate-2);
+  --color-slate-3: var(--slate-3);
+  --color-slate-4: var(--slate-4);
+  --color-slate-5: var(--slate-5);
+  --color-slate-6: var(--slate-6);
+  --color-slate-7: var(--slate-7);
+  --color-slate-8: var(--slate-8);
+  --color-slate-9: var(--slate-9);
+  --color-slate-10: var(--slate-10);
+  --color-slate-11: var(--slate-11);
+  --color-slate-12: var(--slate-12);
+  --color-iris-1: var(--iris-1);
+  --color-iris-2: var(--iris-2);
+  --color-iris-3: var(--iris-3);
+  --color-iris-4: var(--iris-4);
+  --color-iris-5: var(--iris-5);
+  --color-iris-6: var(--iris-6);
+  --color-iris-7: var(--iris-7);
+  --color-iris-8: var(--iris-8);
+  --color-iris-9: var(--iris-9);
+  --color-iris-10: var(--iris-10);
+  --color-iris-11: var(--iris-11);
+  --color-iris-12: var(--iris-12);
+  --color-grass-1: var(--grass-1);
+  --color-grass-2: var(--grass-2);
+  --color-grass-3: var(--grass-3);
+  --color-grass-4: var(--grass-4);
+  --color-grass-5: var(--grass-5);
+  --color-grass-6: var(--grass-6);
+  --color-grass-7: var(--grass-7);
+  --color-grass-8: var(--grass-8);
+  --color-grass-9: var(--grass-9);
+  --color-grass-10: var(--grass-10);
+  --color-grass-11: var(--grass-11);
+  --color-grass-12: var(--grass-12);
+  --color-red-1: var(--red-1);
+  --color-red-2: var(--red-2);
+  --color-red-3: var(--red-3);
+  --color-red-4: var(--red-4);
+  --color-red-5: var(--red-5);
+  --color-red-6: var(--red-6);
+  --color-red-7: var(--red-7);
+  --color-red-8: var(--red-8);
+  --color-red-9: var(--red-9);
+  --color-red-10: var(--red-10);
+  --color-red-11: var(--red-11);
+  --color-red-12: var(--red-12);
+  --color-amber-1: var(--amber-1);
+  --color-amber-2: var(--amber-2);
+  --color-amber-3: var(--amber-3);
+  --color-amber-4: var(--amber-4);
+  --color-amber-5: var(--amber-5);
+  --color-amber-6: var(--amber-6);
+  --color-amber-7: var(--amber-7);
+  --color-amber-8: var(--amber-8);
+  --color-amber-9: var(--amber-9);
+  --color-amber-10: var(--amber-10);
+  --color-amber-11: var(--amber-11);
+  --color-amber-12: var(--amber-12);
+  --color-blue-1: var(--blue-1);
+  --color-blue-2: var(--blue-2);
+  --color-blue-3: var(--blue-3);
+  --color-blue-4: var(--blue-4);
+  --color-blue-5: var(--blue-5);
+  --color-blue-6: var(--blue-6);
+  --color-blue-7: var(--blue-7);
+  --color-blue-8: var(--blue-8);
+  --color-blue-9: var(--blue-9);
+  --color-blue-10: var(--blue-10);
+  --color-blue-11: var(--blue-11);
+  --color-blue-12: var(--blue-12);
+}
+
+:root {
+  --float-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px -4px rgb(0 0 0 / 0.12);
+}
+
+.dark {
+  --float-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 12px 32px -4px rgb(0 0 0 / 0.6);
+}
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: var(--slate-6);
+  }
+
+  body {
+    background-color: var(--slate-1);
+    color: var(--slate-12);
+    font-family: var(--font-sans);
+    font-size: var(--text-ui);
+    line-height: var(--text-ui--line-height);
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--iris-8);
+    outline-offset: 2px;
+  }
+
+  /* Lucide icons: 1.5 stroke everywhere. */
+  svg.lucide {
+    stroke-width: 1.5;
+  }
+
+  ::selection {
+    background-color: var(--iris-5);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
