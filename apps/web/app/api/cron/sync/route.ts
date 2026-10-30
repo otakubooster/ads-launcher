@@ -17,10 +17,15 @@ function authorized(request: NextRequest) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-/** Scheduled sync for hosts without the worker: every 15 min (quick) and once a day (?mode=daily). */
+/**
+ * Scheduled sync for hosts without the worker: every 15 min (quick), once a day
+ * (?mode=daily), and on demand ?mode=backfill&days=30 to re-pull history.
+ */
 export async function GET(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Not allowed" }, { status: 401 });
-  const mode = request.nextUrl.searchParams.get("mode") === "daily" ? "daily" : "quick";
-  const result = await scheduledSync(getDb(), mode);
+  const param = request.nextUrl.searchParams.get("mode");
+  const mode = param === "daily" || param === "backfill" ? param : "quick";
+  const days = Math.min(90, Math.max(10, Number(request.nextUrl.searchParams.get("days")) || 30));
+  const result = await scheduledSync(getDb(), mode, days);
   return NextResponse.json({ mode, ...result }, { status: result.failed.length && !result.accounts ? 502 : 200 });
 }

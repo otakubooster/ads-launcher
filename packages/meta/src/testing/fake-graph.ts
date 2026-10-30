@@ -119,6 +119,8 @@ function insightRow(ad: Obj, date: string) {
     actions: [
       { action_type: "purchase", value: String(purchases) },
       { action_type: "video_view", value: String(plays) },
+      { action_type: "add_to_cart", value: String(Math.round(clicks * r("atc", 0.06, 0.12))) },
+      { action_type: "initiate_checkout", value: String(Math.round(clicks * r("ic", 0.03, 0.06))) },
     ],
     action_values: [{ action_type: "purchase", value: value.toFixed(2) }],
     video_thruplay_watched_actions: [{ action_type: "video_view", value: String(thru) }],
@@ -192,7 +194,18 @@ export function createFakeGraph() {
         const range = json("time_range") as { since: string; until: string } | null;
         const today = new Date().toISOString().slice(0, 10);
         const span = range ?? { since: today, until: today };
-        return [200, page(list("ad", head).flatMap((ad) => days(span.since, span.until).map((d) => insightRow(ad, d)).filter(Boolean)))];
+        const rows = list("ad", head).flatMap((ad) => days(span.since, span.until).map((d) => insightRow(ad, d)).filter((r) => r !== null));
+        // Reach for a whole range at a coarser level: unique people, so less than impressions.
+        if (params.level && params.level !== "ad") {
+          const level = params.level as "account" | "campaign" | "adset";
+          const groups = new Map<string, number>();
+          for (const r of rows) {
+            const id = level === "account" ? head : String(level === "campaign" ? r.campaign_id : r.adset_id);
+            groups.set(id, (groups.get(id) ?? 0) + Number(r.impressions));
+          }
+          return [200, page([...groups].map(([id, impressions]) => ({ [`${level}_id`]: id.replace("act_", ""), reach: String(Math.round(impressions / 1.6)), date_start: span.since, date_stop: span.until })))];
+        }
+        return [200, page(rows)];
       }
       if (method === "POST" && edge === "insights") {
         const range = json("time_range") as { since: string; until: string };

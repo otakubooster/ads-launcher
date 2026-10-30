@@ -109,6 +109,10 @@ describe("mapInsights", () => {
       purchaseValue: 26000,
       video3sPlays: 3100,
       thruplays: 900,
+      addToCart: 0,
+      checkouts: 0,
+      results: 4,
+      actions: { purchase: 4, video_view: 3100, link_click: 180 },
     });
     expect(mapInsights([{ ad_id: "9", date_start: "2026-10-29", spend: "1500" }], new Map([["9", "x"]]), "JPY")[0]!.spend).toBe(1500);
   });

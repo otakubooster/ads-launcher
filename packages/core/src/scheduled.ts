@@ -7,7 +7,7 @@ import { killSwitchState } from "./guardrails";
 import { syncAccountObjects, syncInsights, syncableAccounts } from "./sync";
 import type { AnyDb } from "./types";
 
-export type ScheduledSyncResult = { skipped?: string; accounts: number; failed: { adAccountId: string; error: string }[]; assets?: number };
+export type ScheduledSyncResult = { skipped?: string; accounts: number; failed: { adAccountId: string; error: string }[]; assets?: number; days?: number };
 
 /**
  * The worker's schedule for hosts without one (Vercel): an external cron calls this
@@ -15,7 +15,7 @@ export type ScheduledSyncResult = { skipped?: string; accounts: number; failed: 
  * day ("daily": also pages, Instagram accounts and pixels, and the last 7 days of
  * insights, which Meta keeps adjusting). Account by account, never in parallel.
  */
-export async function scheduledSync(db: AnyDb, mode: "quick" | "daily" = "quick"): Promise<ScheduledSyncResult> {
+export async function scheduledSync(db: AnyDb, mode: "quick" | "daily" | "backfill" = "quick", backfillDays = 30): Promise<ScheduledSyncResult> {
   if ((await killSwitchState(db)).on) return { skipped: "kill switch on", accounts: 0, failed: [] };
   const result: ScheduledSyncResult = { accounts: 0, failed: [] };
 
@@ -36,7 +36,15 @@ export async function scheduledSync(db: AnyDb, mode: "quick" | "daily" = "quick"
     const today = todayIn(a.timezone);
     try {
       await syncAccountObjects(db, a.id);
-      await syncInsights(db, a.id, { since: addDays(today, mode === "daily" ? -7 : -1), until: today });
+      if (mode === "backfill") {
+        // Re-pull history (e.g. after new metrics were added) in 10-day windows.
+        for (let end = today; end > addDays(today, -backfillDays); end = addDays(end, -10)) {
+          await syncInsights(db, a.id, { since: addDays(end, -9), until: end });
+        }
+        result.days = backfillDays;
+      } else {
+        await syncInsights(db, a.id, { since: addDays(today, mode === "daily" ? -7 : -1), until: today });
+      }
       result.accounts++;
     } catch (e) {
       if (e instanceof MetaApiError && e.kind === "auth") await markConnectionBroken(db, a.connectionId, e);

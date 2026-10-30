@@ -1,12 +1,13 @@
 import { adAccounts, changeLog, insightsDaily, metaAdsets, metaAds, metaCampaigns, metaConnections } from "@fahd/db/schema";
 import type { MetaClient } from "@fahd/meta";
+import { resultType } from "@fahd/shared/meta-options";
 import { and, eq, inArray, lt, ne, sql } from "drizzle-orm";
 import { clientForAdAccount } from "./meta-client";
 import type { AnyDb } from "./types";
 
-const CAMPAIGN_FIELDS = "id,name,status,effective_status,objective,bid_strategy,daily_budget,lifetime_budget";
+const CAMPAIGN_FIELDS = "id,name,status,effective_status,objective,bid_strategy,daily_budget,lifetime_budget,stop_time";
 const ADSET_FIELDS =
-  "id,name,status,effective_status,campaign_id,optimization_goal,bid_strategy,daily_budget,lifetime_budget,billing_event,targeting,learning_stage_info,promoted_object,attribution_spec";
+  "id,name,status,effective_status,campaign_id,optimization_goal,bid_strategy,daily_budget,lifetime_budget,billing_event,targeting,learning_stage_info,promoted_object,attribution_spec,end_time";
 const AD_FIELDS = "id,name,status,effective_status,campaign_id,adset_id,creative{id,thumbnail_url},ad_review_feedback";
 const INSIGHT_FIELDS =
   "ad_id,adset_id,campaign_id,spend,impressions,inline_link_clicks,actions,action_values,video_thruplay_watched_actions";
@@ -200,7 +201,11 @@ export function currencyDigits(currency: string) {
 }
 
 /** Maps Graph insight rows to insights_daily rows (docs/spec.md → Metric definitions). */
-export function mapInsights(rows: GraphInsight[], adIds: Map<string, string>, currency: string) {
+/**
+ * One insights_daily row per ad per day. `resultActions` maps a Meta ad id to the action
+ * its ad set optimizes for (resultType()); purchases when missing.
+ */
+export function mapInsights(rows: GraphInsight[], adIds: Map<string, string>, currency: string, resultActions: Map<string, string> = new Map()) {
   const digits = currencyDigits(currency);
   return rows
     .filter((r) => adIds.has(r.ad_id))
@@ -214,15 +219,30 @@ export function mapInsights(rows: GraphInsight[], adIds: Map<string, string>, cu
       purchaseValue: toMinor(r.action_values?.find((a) => a.action_type === "purchase")?.value, digits),
       video3sPlays: actionValue(r.actions, "video_view"),
       thruplays: actionValue(r.video_thruplay_watched_actions, "video_view"),
+      addToCart: Math.round(actionValue(r.actions, "add_to_cart")),
+      checkouts: Math.round(actionValue(r.actions, "initiate_checkout")),
+      results: Math.round(resultCount(r, resultActions.get(r.ad_id) ?? "purchase")),
+      actions: Object.fromEntries((r.actions ?? []).map((a) => [a.action_type, Number(a.value)])),
     }));
+}
+
+function resultCount(r: GraphInsight, action: string) {
+  if (action === "link_click") return Number(r.inline_link_clicks ?? actionValue(r.actions, "link_click"));
+  if (action === "video_thruplay") return actionValue(r.video_thruplay_watched_actions, "video_view");
+  return actionValue(r.actions, action);
 }
 
 async function storeInsights(db: AnyDb, adAccountId: string, rows: GraphInsight[]) {
   const [account] = await db.select({ currency: adAccounts.currency }).from(adAccounts).where(eq(adAccounts.id, adAccountId));
   const metaIds = [...new Set(rows.map((r) => r.ad_id))];
   if (!account || metaIds.length === 0) return 0;
-  const ads = await db.select({ id: metaAds.id, metaId: metaAds.metaId }).from(metaAds).where(inArray(metaAds.metaId, metaIds));
-  const mapped = mapInsights(rows, new Map(ads.map((a) => [a.metaId, a.id])), account.currency);
+  const ads = await db
+    .select({ id: metaAds.id, metaId: metaAds.metaId, goal: metaAdsets.optimizationGoal, adset: metaAdsets.raw })
+    .from(metaAds)
+    .innerJoin(metaAdsets, eq(metaAdsets.id, metaAds.adsetId))
+    .where(inArray(metaAds.metaId, metaIds));
+  const results = new Map(ads.map((a) => [a.metaId, resultType(a.goal, (a.adset as { promoted_object?: never }).promoted_object).action]));
+  const mapped = mapInsights(rows, new Map(ads.map((a) => [a.metaId, a.id])), account.currency, results);
   for (let i = 0; i < mapped.length; i += 500) {
     await db
       .insert(insightsDaily)
@@ -237,6 +257,10 @@ async function storeInsights(db: AnyDb, adAccountId: string, rows: GraphInsight[
           purchaseValue: sql`excluded.purchase_value`,
           video3sPlays: sql`excluded.video_3s_plays`,
           thruplays: sql`excluded.thruplays`,
+          addToCart: sql`excluded.add_to_cart`,
+          checkouts: sql`excluded.checkouts`,
+          results: sql`excluded.results`,
+          actions: sql`excluded.actions`,
         },
       });
   }
@@ -248,7 +272,8 @@ const insightParams = (since: string, until: string) => ({
   time_increment: 1,
   time_range: { since, until },
   fields: INSIGHT_FIELDS,
-  action_attribution_windows: ["7d_click", "1d_view"],
+  // Each ad set's own attribution setting, as Ads Manager reports it.
+  use_unified_attribution_setting: true,
   limit: 500,
 });
 

@@ -172,6 +172,12 @@ This also stops Supabase's free plan from pausing the database for inactivity.
 The app also refreshes whenever you open it and the data is more than 10 minutes old,
 and the refresh icon at the top always works.
 
+## After an update that adds metrics
+
+Open this once in your browser (your address and `CRON_SECRET`) to re-pull the last 30
+days, so new columns have history: 
+`https://YOUR-ADDRESS.vercel.app/api/cron/sync?mode=backfill&days=30&key=YOUR_CRON_SECRET`
+
 ## Done
 
 - Sign in from anywhere. Meta only ever sees Vercel's servers, never your location.

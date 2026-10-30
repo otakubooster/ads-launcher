@@ -5,6 +5,7 @@ import { AdsView, type SavedView } from "@/components/table/ads-view";
 import { parseFilters, resolveRanges } from "@/lib/filters";
 import { loadAccountBudgets, loadAdsRows, type Level } from "@/lib/server/ads";
 import { requireSession } from "@/lib/server/auth";
+import { attachReach } from "@/lib/server/reach";
 import { asUser } from "@/lib/server/db";
 
 export const metadata: Metadata = { title: "Ads" };
@@ -31,13 +32,16 @@ export default async function AdsPage({ searchParams }: { searchParams: Promise<
     })),
   ]);
 
+  const withReach = await attachReach(rows, level, range);
+
   return (
     <>
       <h1 className="sr-only">Ads</h1>
       <AdsView
         key={level}
         level={level}
-        rows={rows}
+        rows={withReach.rows}
+        totalReach={withReach.totalReach}
         budgets={budgets}
         views={extra.views.map((v): SavedView => ({ id: v.id, name: v.name, columns: v.columns, filters: v.filters as Record<string, unknown>, sort: v.sort }))}
         canEdit={session.role !== "viewer"}
