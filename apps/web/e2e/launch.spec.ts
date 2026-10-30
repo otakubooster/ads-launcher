@@ -1,5 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ensureConnected, fakeObjects, makeImage, signIn } from "./helpers";
+import { GRAPH, ensureConnected, fakeObjects, makeImage, signIn } from "./helpers";
+
+// The second test launches the creatives the first one uploads.
+test.describe.configure({ mode: "serial" });
 
 /** A Lumen preset on the fake Lumen US account (Canada market, so it never clashes with the presets spec). */
 async function ensurePreset(page: Page) {
@@ -90,4 +93,69 @@ test("the builder autosaves, reviews and creates everything paused (week 3 check
   // A submitted launch can't be edited: the builder sends you to its log.
   await page.goto(draftUrl);
   await page.waitForURL(/\/launches\//);
+});
+
+test("the launch log shows Meta's error and fix, retries only failed items, activates and duplicates (week 3 check)", async ({ page }) => {
+  test.setTimeout(180_000);
+  await signIn(page, "Fahd");
+  await page.goto("/launch");
+  await page.getByLabel("Preset", { exact: true }).selectOption({ label: "Lumen · CA · en" });
+  await page.getByRole("button", { name: "Start launch" }).click();
+  await page.waitForURL(/\/launch\/[0-9a-f-]{36}$/);
+  await page.getByLabel("Launch name").fill("E2E retry test");
+  await page.getByLabel("Daily budget").fill("30");
+
+  await page.getByRole("button", { name: "Next: Creatives" }).click();
+  await page.getByRole("button", { name: "Pick from library" }).first().click();
+  const picker = page.getByRole("dialog");
+  await picker.getByLabel("Select e2eglow").check();
+  await picker.getByLabel("Select e2eshine").check();
+  await picker.getByRole("button", { name: "Add 2 creatives" }).click();
+  // Angles were saved to the library by the first test.
+  await expect(page.getByLabel("Angle for e2eglow")).toHaveValue("glow");
+
+  await page.getByRole("button", { name: "Next: Copy" }).click();
+  await page.getByLabel("Primary text 1").fill("Wake up glowing.");
+  await page.getByLabel("Headline 1").fill("Glow serum");
+  await expect(page.getByTestId("launch-summary")).toHaveText(/2 ads · 2 ad sets/);
+  await expect(page.getByText("Draft saved")).toBeVisible();
+
+  // Meta refuses the first ad set once.
+  await fetch(`${GRAPH}/__fake/fail`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ match: "^POST act_200000000000001/adsets$", times: 1, error: { code: 100, message: "Invalid parameter", error_user_title: "Budget too low", error_user_msg: "Your daily budget must be at least $1.00." } }),
+  });
+  const before = await fakeObjects();
+  await page.getByRole("button", { name: "Review launch" }).click();
+  await page.getByRole("button", { name: "Create paused" }).click();
+  await page.waitForURL(/\/launches\/[0-9a-f-]{36}$/);
+  await expect(page.getByTestId("launch-status")).toHaveText("Partial", { timeout: 60_000 });
+  const items = page.getByRole("list", { name: "Launch items" });
+  await expect(items.getByText("Budget too low")).toBeVisible();
+  await expect(items.getByText("Your daily budget must be at least $1.00.")).toBeVisible();
+  await expect(items.getByText("Change the highlighted setting and try again.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Retry failed items" }).click();
+  await expect(page.getByTestId("launch-status")).toHaveText("Done", { timeout: 60_000 });
+  const added = (await fakeObjects()).filter((o) => !before.some((b) => b.id === o.id));
+  expect(added.filter((o) => o.type === "campaign")).toHaveLength(1);
+  expect(added.filter((o) => o.type === "adset")).toHaveLength(2);
+  expect(added.filter((o) => o.type === "ad")).toHaveLength(2);
+
+  await page.getByRole("button", { name: "Activate all" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: /Activate all/ }).click();
+  await expect(page.getByText("Activated 5 objects.")).toBeVisible();
+  const after = await fakeObjects();
+  for (const o of added.filter((x) => ["campaign", "adset", "ad"].includes(x.type))) expect(after.find((x) => x.id === o.id)!.status).toBe("ACTIVE");
+  await expect(page.getByRole("button", { name: "Activate all" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Duplicate" }).click();
+  await page.waitForURL(/\/launch\/[0-9a-f-]{36}$/);
+  await expect(page.getByLabel("Launch name")).toHaveValue("E2E retry test (copy)");
+  await expect(page.getByTestId("launch-summary")).toHaveText(/2 ads · 2 ad sets/);
+
+  await page.goto("/launches");
+  await expect(page.getByRole("row", { name: /E2E retry test/ })).toContainText("Done");
+  await expect(page.getByRole("row", { name: /E2E glow test/ })).toContainText("Done");
 });
