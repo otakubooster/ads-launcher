@@ -17,6 +17,8 @@ type Failure = { match: RegExp; status: number; error: Record<string, unknown>; 
 
 export const FAKE_BUSINESS_ID = "100000000000001";
 export const FAKE_TOKEN_PREFIX = "EAAFAKE";
+/** Meta hands out video upload chunks; the fake uses 50 MB. */
+const CHUNK = 50 * 1024 * 1024;
 
 const ACCOUNTS = [
   { id: "act_200000000000001", name: "Lumen US", currency: "USD", timezone_name: "America/New_York" },
@@ -228,11 +230,14 @@ export function createFakeGraph() {
         if (params.upload_phase === "start") {
           const id = nextId();
           state.objects.set(id, { id, type: "advideo", account_id: head, size: Number(params.file_size) });
-          return [200, { upload_session_id: `${id}s`, video_id: id, start_offset: "0", end_offset: params.file_size }];
+          return [200, { upload_session_id: `${id}s`, video_id: id, start_offset: "0", end_offset: String(Math.min(Number(params.file_size), CHUNK)) }];
         }
         if (params.upload_phase === "transfer") {
-          const size = state.objects.get(params.upload_session_id!.slice(0, -1))?.size;
-          return [200, { start_offset: String(size), end_offset: String(size) }];
+          const video = state.objects.get(params.upload_session_id!.slice(0, -1));
+          const size = Number(video?.size ?? 0);
+          const next = Number(params.start_offset) + Number(params.chunk_size ?? 0);
+          if (video) video.received = next;
+          return [200, { start_offset: String(next), end_offset: String(Math.min(next + CHUNK, size)) }];
         }
         if (params.upload_phase === "finish") return [200, { success: true }];
         const id = nextId();

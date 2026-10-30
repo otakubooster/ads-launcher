@@ -135,6 +135,8 @@ export const creativeUploads = pgTable(
       .references(() => adAccounts.id, { onDelete: "cascade" }),
     imageHash: text("image_hash"),
     videoId: text("video_id"),
+    /** Meta's preferred video thumbnail; video ads need one (image_url). */
+    thumbnailUrl: text("thumbnail_url"),
     status: uploadStatus("status").notNull().default("queued"),
     error: text("error"),
   },

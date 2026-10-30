@@ -7,7 +7,7 @@ import * as s from "./schema";
  * campaigns → ad sets → ads, 28 days of insights ending yesterday, a finished
  * and a draft launch, change log entries and API usage readings.
  * Deterministic for a given `today`. All Meta IDs are fake.
- * `minimal` seeds only the team, brands, templates, copy and creatives; connect
+ * `minimal` seeds only the team, brands, templates and copy; connect
  * the fake Graph server in Settings to fill in the Meta side.
  */
 
@@ -123,6 +123,19 @@ export async function seed(
     },
   ]);
 
+  await db.insert(s.savedViews).values({
+    userId: owner,
+    name: "Winners · ROAS",
+    level: "ad",
+    columns: ["status", "name", "spend", "purchases", "cpa", "roas", "hook_rate"],
+    filters: { roas: { gte: 2 } },
+    sort: [{ id: "roas", desc: true }],
+  });
+
+  if (minimal) return { ads: 0, insights: 0 };
+
+  // Everything below mirrors Meta (and creatives, whose files aren't in storage).
+  // Minimal mode leaves it to uploads and a sync with the fake Graph server.
   // Creatives: hook × ratio pairs that share a group_key.
   const hooks = ["hook1", "hook2", "hook3"];
   await db.insert(s.creatives).values(
@@ -144,18 +157,6 @@ export async function seed(
     ),
   );
 
-  await db.insert(s.savedViews).values({
-    userId: owner,
-    name: "Winners · ROAS",
-    level: "ad",
-    columns: ["status", "name", "spend", "purchases", "cpa", "roas", "hook_rate"],
-    filters: { roas: { gte: 2 } },
-    sort: [{ id: "roas", desc: true }],
-  });
-
-  if (minimal) return { ads: 0, insights: 0 };
-
-  // Everything below mirrors Meta. Minimal mode leaves it to a sync with the fake Graph server.
   const [connection] = await db
     .insert(s.metaConnections)
     .values({

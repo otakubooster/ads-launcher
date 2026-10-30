@@ -36,6 +36,13 @@
       "when": 1793369620121,
       "tag": "0004_meta_assets_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793372926687,
+      "tag": "0005_upload_thumbnail",
+      "breakpoints": true
     }
   ]
 }

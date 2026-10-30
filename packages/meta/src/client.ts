@@ -130,6 +130,11 @@ export class MetaClient {
     return this.request<T>("POST", path, params, options);
   }
 
+  /** Multipart POST for media (adimages bytes, advideos chunks). Never retried after sending. */
+  upload<T>(path: string, form: FormData, options?: RequestOptions) {
+    return this.request<T>("POST", path, form, options);
+  }
+
   delete<T>(path: string, params?: Params, options?: RequestOptions) {
     return this.request<T>("DELETE", path, params, options);
   }
@@ -181,9 +186,9 @@ export class MetaClient {
     });
   }
 
-  async request<T>(method: Method, rawPath: string, params?: Params, options: RequestOptions = {}): Promise<T> {
+  async request<T>(method: Method, rawPath: string, params?: Params | FormData, options: RequestOptions = {}): Promise<T> {
     const path = normalizePath(rawPath);
-    assertPausedCreate(method, path, params);
+    if (!(params instanceof FormData)) assertPausedCreate(method, path, params);
     const accountId = options.accountId ?? accountFromPath(path);
 
     for (let retries = 0; ; retries++) {
@@ -229,9 +234,8 @@ export class MetaClient {
     }
   }
 
-  private send(method: Method, path: string, params: Params | undefined, signal?: AbortSignal) {
+  private send(method: Method, path: string, params: Params | FormData | undefined, signal?: AbortSignal) {
     const url = new URL(`${graphHost()}/${this.version}/${path}`);
-    const fields = new URLSearchParams({ ...encodeParams(params), appsecret_proof: this.proof });
     const timeout = AbortSignal.timeout(this.timeoutMs);
     const init: RequestInit = {
       method,
@@ -239,6 +243,12 @@ export class MetaClient {
       headers: { Authorization: `Bearer ${this.token}` },
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     };
+    if (params instanceof FormData) {
+      params.set("appsecret_proof", this.proof);
+      init.body = params;
+      return this.fetchImpl(url, init);
+    }
+    const fields = new URLSearchParams({ ...encodeParams(params), appsecret_proof: this.proof });
     if (method === "POST") init.body = fields;
     else url.search = fields.toString();
     return this.fetchImpl(url, init);

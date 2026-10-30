@@ -17,6 +17,10 @@ export const E2E_ENV = {
   META_APP_SECRET: "e2e-secret",
   TOKEN_ENCRYPTION_KEY: process.env.TOKEN_ENCRYPTION_KEY ?? randomBytes(32).toString("base64"),
   FX_RATES: '{"EUR":1.08,"GBP":1.27}',
+  APP_URL: `http://localhost:${PORT}`,
+  STORAGE_DRIVER: "local",
+  STORAGE_DIR: "/tmp/fahd-e2e-storage",
+  META_VIDEO_POLL_MS: "200",
   REPORTING_CURRENCY: "USD",
   // Empty: no worker runs in e2e, so syncs and launches run inline.
   REDIS_URL: "",

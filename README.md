@@ -24,6 +24,10 @@ pnpm db:migrate   # apply migrations in packages/db/migrations
 pnpm db:seed      # fictional brands, accounts, 28 days of metrics (local databases only)
 ```
 
+Create a **private** Storage bucket named `creatives` and raise the project's upload size
+limit to at least 1 GB (Storage → Settings), so 500 MB videos fit. Browsers upload straight
+to the bucket through signed URLs; Meta fetches videos from signed read URLs.
+
 For plain Postgres instead of Supabase, apply `packages/db/supabase-shim.sql` once
 before migrating. It adds the `auth` schema and roles that Supabase normally provides.
 Never run the shim against a Supabase project.
@@ -72,7 +76,7 @@ Sessions follow *Claude Code playbook → Session order* in the spec.
 - [x] 4. Settings → Meta connections
 - [x] 5. Sync and insights workers, Ads table
 - [x] 6. Dashboard
-- [ ] 7. Creatives library and upload pipeline
+- [x] 7. Creatives library and upload pipeline
 - [ ] 8. Presets, naming and ad set templates
 - [ ] 9. Launch builder and runner
 - [ ] 10. Launch log
