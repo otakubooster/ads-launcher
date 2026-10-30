@@ -23,12 +23,12 @@ beforeAll(async () => {
 });
 
 describe("schema", () => {
-  it("creates all 19 tables with RLS enabled", async () => {
+  it("creates all 20 tables with RLS enabled", async () => {
     const rows = await db.execute<{ relname: string; relrowsecurity: boolean }>(sql`
       select c.relname, c.relrowsecurity from pg_class c
       join pg_namespace n on n.oid = c.relnamespace
       where n.nspname = 'public' and c.relkind = 'r' order by 1`);
-    expect(rows.rows).toHaveLength(19);
+    expect(rows.rows).toHaveLength(20);
     expect(rows.rows.filter((r) => !r.relrowsecurity)).toEqual([]);
   });
 

@@ -31,6 +31,20 @@ Never run the shim against a Supabase project.
 The seed signs nobody in: it creates four team members (owner, admin, buyer, viewer)
 at `@example.com` addresses, with fixed IDs listed in `packages/db/src/seed.ts`.
 
+## Local development without Meta or Supabase
+
+The app runs end to end against a fake Graph API and development sign-in:
+
+```bash
+pnpm db:migrate && pnpm db:seed --minimal   # team, brands, templates; no Meta data
+pnpm fake-meta                              # fake Graph API on :4010
+pnpm dev                                    # with DEV_AUTH=1 and META_GRAPH_HOST in apps/web/.env.local
+```
+
+Sign in as Fahd (owner), open Settings → Add connection, and use Business ID
+`100000000000001` with any token starting `EAAFAKE`. `pnpm e2e` does the same against a
+throwaway database (`E2E_DATABASE_URL`, default `postgres://postgres@localhost:54329/fahd_e2e`).
+
 ## Checks
 
 ```bash
@@ -54,7 +68,7 @@ Sessions follow *Claude Code playbook → Session order* in the spec.
 - [x] 1. Monorepo, design tokens, light and dark themes, app shell, ⌘K
 - [x] 2. Drizzle schema, RLS, metric views, seed data
 - [x] 3. `packages/meta` client, headers, error map, throttle
-- [ ] 4. Settings → Meta connections
+- [x] 4. Settings → Meta connections
 - [ ] 5. Sync and insights workers, Ads table
 - [ ] 6. Dashboard
 - [ ] 7. Creatives library and upload pipeline

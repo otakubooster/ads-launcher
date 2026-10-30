@@ -11,7 +11,7 @@ if (!local && !process.argv.includes("--force")) {
 
 const db = createDb(url);
 try {
-  const result = await seed(db);
+  const result = await seed(db, { minimal: process.argv.includes("--minimal") });
   console.log(`Seeded ${result.ads} ads and ${result.insights} insight rows.`);
 } finally {
   await db.$client.end();

@@ -22,6 +22,20 @@
       "when": 1793367761847,
       "tag": "0002_rls_views_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793369618770,
+      "tag": "0003_meta_assets",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793369620121,
+      "tag": "0004_meta_assets_triggers",
+      "breakpoints": true
     }
   ]
 }

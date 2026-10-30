@@ -23,4 +23,5 @@ export const entityLevel = pgEnum("entity_level", [
   "preset",
   "user",
 ]);
+export const assetKind = pgEnum("asset_kind", ["page", "instagram", "pixel"]);
 export const tableLevel = pgEnum("table_level", ["campaign", "adset", "ad"]);

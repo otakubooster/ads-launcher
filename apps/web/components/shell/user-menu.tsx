@@ -17,6 +17,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { signOut } from "@/app/(auth)/actions";
 import { cn } from "@/lib/utils";
 import { useShell, type Role } from "./shell-provider";
 
@@ -52,7 +53,8 @@ export function UserMenu({ isRail }: { isRail: boolean }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent side={isRail ? "right" : "top"} align={isRail ? "end" : "start"} className="w-56">
         <DropdownMenuLabel>
-          {user.name} · {ROLE_LABEL[user.role]}
+          <span className="block text-slate-12">{user.name}</span>
+          <span className="block font-normal">{user.email} · {ROLE_LABEL[user.role]}</span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         <DropdownMenuSub>
@@ -86,10 +88,14 @@ export function UserMenu({ isRail }: { isRail: boolean }) {
           </Link>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>
-          <LogOut />
-          Sign out
-        </DropdownMenuItem>
+        <form action={signOut}>
+          <DropdownMenuItem asChild>
+            <button type="submit" className="w-full">
+              <LogOut />
+              Sign out
+            </button>
+          </DropdownMenuItem>
+        </form>
       </DropdownMenuContent>
     </DropdownMenu>
   );

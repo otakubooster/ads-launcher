@@ -1,4 +1,15 @@
 import { expect, test } from "@playwright/test";
+import { signIn } from "./helpers";
+
+test.beforeEach(async ({ page }) => {
+  await signIn(page, "Fahd");
+});
+
+test("signed-out visitors land on sign-in", async ({ browser }) => {
+  const page = await (await browser.newContext()).newPage();
+  await page.goto("/dashboard");
+  await expect(page).toHaveURL(/\/login$/);
+});
 
 test("root redirects to the dashboard inside the shell", async ({ page }) => {
   await page.goto("/");
