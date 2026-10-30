@@ -25,6 +25,12 @@ export default async function globalSetup() {
   await migrate(db, { migrationsFolder: `${dbDir}migrations` });
   await seed(db, { minimal: true });
   await client.end();
+
+  // next dev compiles routes on first request; warm them so tests don't time out.
+  const base = "http://localhost:3100";
+  for (const route of ["/login", "/dashboard", "/ads", "/creatives", "/presets", "/copy", "/settings", "/launch", "/launches"]) {
+    await fetch(`${base}${route}`, { redirect: "manual", signal: AbortSignal.timeout(120_000) }).catch(() => {});
+  }
 }
 
 function pgOptions(url: URL) {

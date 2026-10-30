@@ -77,7 +77,7 @@ Sessions follow *Claude Code playbook → Session order* in the spec.
 - [x] 5. Sync and insights workers, Ads table
 - [x] 6. Dashboard
 - [x] 7. Creatives library and upload pipeline
-- [ ] 8. Presets, naming and ad set templates
+- [x] 8. Presets, naming and ad set templates
 - [ ] 9. Launch builder and runner
 - [ ] 10. Launch log
 - [ ] 11. Guardrails, approvals, kill switch, alerts

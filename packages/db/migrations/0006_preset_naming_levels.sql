@@ -1,0 +1,4 @@
+ALTER TABLE "presets" ADD COLUMN "adset_naming_template_id" uuid;--> statement-breakpoint
+ALTER TABLE "presets" ADD COLUMN "ad_naming_template_id" uuid;--> statement-breakpoint
+ALTER TABLE "presets" ADD CONSTRAINT "presets_adset_naming_template_id_naming_templates_id_fk" FOREIGN KEY ("adset_naming_template_id") REFERENCES "public"."naming_templates"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "presets" ADD CONSTRAINT "presets_ad_naming_template_id_naming_templates_id_fk" FOREIGN KEY ("ad_naming_template_id") REFERENCES "public"."naming_templates"("id") ON DELETE set null ON UPDATE no action;

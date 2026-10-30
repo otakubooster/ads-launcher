@@ -43,6 +43,13 @@
       "when": 1793372926687,
       "tag": "0005_upload_thumbnail",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793373837974,
+      "tag": "0006_preset_naming_levels",
+      "breakpoints": true
     }
   ]
 }

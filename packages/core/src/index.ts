@@ -8,3 +8,4 @@ export * from "./objects";
 export * from "./fx";
 export * from "./storage";
 export * from "./uploads";
+export * from "./presets";

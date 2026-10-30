@@ -19,6 +19,8 @@
   },
   "exports": {
     ".": "./src/index.ts",
-    "./creatives": "./src/creatives.ts"
+    "./creatives": "./src/creatives.ts",
+    "./naming": "./src/naming.ts",
+    "./meta-options": "./src/meta-options.ts"
   }
 }

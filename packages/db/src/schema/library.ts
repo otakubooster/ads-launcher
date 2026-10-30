@@ -86,7 +86,10 @@ export const presets = pgTable(
     urlTags: text("url_tags"),
     defaultCta: text("default_cta").notNull().default("SHOP_NOW"),
     creativeFeatures: jsonb("creative_features").$type<CreativeFeatures>().notNull().default({}),
+    /** Campaign-level naming template. */
     namingTemplateId: uuid("naming_template_id").references(() => namingTemplates.id, { onDelete: "set null" }),
+    adsetNamingTemplateId: uuid("adset_naming_template_id").references(() => namingTemplates.id, { onDelete: "set null" }),
+    adNamingTemplateId: uuid("ad_naming_template_id").references(() => namingTemplates.id, { onDelete: "set null" }),
     adsetTemplateId: uuid("adset_template_id").references(() => adsetTemplates.id, { onDelete: "set null" }),
   },
   (t) => [unique("presets_brand_market_language").on(t.brandId, t.market, t.language), ...editable()],
