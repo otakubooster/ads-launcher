@@ -5,9 +5,18 @@ export const FAKE_TOKEN = "EAAFAKEsystemusertoken-e2e-000001";
 
 export async function signIn(page: Page, name: "Fahd" | "Sara Admin" | "Omar Buyer" | "Lina Viewer") {
   await page.context().clearCookies();
-  await page.goto("/login");
-  await page.getByRole("button", { name: new RegExp(name) }).click();
-  await page.waitForURL("**/dashboard");
+  // The first sign-in after a code change can land while next dev is still compiling the
+  // server action and bounce back to /login; try again rather than hang.
+  for (let attempt = 1; ; attempt++) {
+    await page.goto("/login");
+    await page.getByRole("button", { name: new RegExp(name) }).click();
+    try {
+      await page.waitForURL("**/dashboard", { timeout: attempt < 3 ? 20_000 : 60_000 });
+      return;
+    } catch (e) {
+      if (attempt >= 3) throw e;
+    }
+  }
 }
 
 /** Connects the fake Business Manager once; later calls are no-ops. */

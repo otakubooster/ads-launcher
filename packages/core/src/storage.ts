@@ -53,7 +53,8 @@ export function localRoot() {
 
 /** Resolves an object path inside the storage root, refusing traversal. */
 export function localFile(objectPath: string) {
-  const root = path.resolve(localRoot());
+  // Runtime-only path (STORAGE_DIR); keep the bundler from tracing the whole project.
+  const root = path.resolve(/*turbopackIgnore: true*/ localRoot());
   const full = path.resolve(root, objectPath);
   if (!full.startsWith(root + path.sep)) throw new Error("Invalid storage path");
   return full;

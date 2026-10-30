@@ -22,6 +22,10 @@ export const E2E_ENV = {
   STORAGE_DIR: "/tmp/fahd-e2e-storage",
   META_VIDEO_POLL_MS: "200",
   REPORTING_CURRENCY: "USD",
+  NEXT_PUBLIC_LAUNCH_FEATURES: "1",
+  // Tests sync explicitly; a background sync on page load would race them.
+  NEXT_PUBLIC_AUTO_SYNC_MINUTES: "0",
+  CRON_SECRET: "e2e-cron-secret-0000000000",
   // Empty: no worker runs in e2e, so syncs and launches run inline.
   REDIS_URL: "",
 };

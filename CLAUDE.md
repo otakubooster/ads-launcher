@@ -162,5 +162,13 @@ everything created paused. Screens checked in light and dark against the spec.
 - Buyers' max budget step is per member (users.max_budget_change_pct, default 30); the
   budget popover shows it and the server enforces it.
 - Below 768 px launching is desktop-only (components/launch/desktop-only.tsx).
-- Back-to-back Playwright runs can collide with the previous run's dev server; wait a few
-  seconds between runs if sign-in loops to /login.
+- e2e signIn() retries: the first sign-in after a code change can hit next dev while it is
+  still compiling the server action and bounce back to /login.
+- Monitoring-only deploys (Vercel, no worker): NEXT_PUBLIC_LAUNCH_FEATURES≠1 hides the launch
+  pages (lib/features.ts; proxy.ts redirects them). /api/cron/sync (CRON_SECRET as Bearer or
+  ?key=) runs scheduledSync() from core; cron-job.org calls it every 15 min, Vercel Cron daily
+  with ?mode=daily. The shell auto-syncs on open when data is older than
+  NEXT_PUBLIC_AUTO_SYNC_MINUTES. apps/web/vercel.json runs migrations before next build;
+  drizzle.config.ts turns the pooler's 6543 URL into the 5432 session URL for them.
+  OWNER_EMAIL bootstraps the first owner on first Supabase sign-in. Guide: docs/deploy-vercel.md.
+- requireSession() calls connection() so signed-in pages are never prerendered.

@@ -10,6 +10,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { LAUNCH_FEATURES, isLaunchPath } from "./features";
+
 export type NavItem = {
   href: string;
   label: string;
@@ -18,7 +20,7 @@ export type NavItem = {
   goKey?: string;
 };
 
-export const NAV_ITEMS: NavItem[] = [
+const ALL_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, goKey: "d" },
   { href: "/ads", label: "Ads", icon: Table2, goKey: "a" },
   { href: "/launch", label: "Launch", icon: Rocket, goKey: "l" },
@@ -28,6 +30,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/presets", label: "Presets", icon: SlidersHorizontal },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+export const NAV_ITEMS = LAUNCH_FEATURES ? ALL_NAV_ITEMS : ALL_NAV_ITEMS.filter((i) => !isLaunchPath(i.href));
 
 export function isNavActive(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
