@@ -251,12 +251,12 @@ export function LaunchList({ rows }: { rows: import("@/lib/server/launches").Lau
         <thead className="bg-slate-2 text-label text-slate-11">
           <tr className="h-8 text-left">
             <th className="px-3 font-medium">Launch</th>
-            <th className="w-36 px-3 font-medium">Preset</th>
-            <th className="w-36 px-3 font-medium">Who</th>
-            <th className="w-32 px-3 font-medium">When</th>
-            <th className="w-36 px-3 font-medium">Status</th>
-            <th className="w-28 px-3 text-right font-medium">Ads</th>
-            <th className="w-24 px-3 text-right font-medium">Failed</th>
+            <th className="hidden w-36 px-3 font-medium md:table-cell">Preset</th>
+            <th className="hidden w-36 px-3 font-medium md:table-cell">Who</th>
+            <th className="w-24 px-3 font-medium md:w-32">When</th>
+            <th className="w-28 px-3 font-medium md:w-36">Status</th>
+            <th className="w-14 px-3 text-right font-medium md:w-28">Ads</th>
+            <th className="hidden w-24 px-3 text-right font-medium md:table-cell">Failed</th>
           </tr>
         </thead>
         <tbody>
@@ -269,8 +269,8 @@ export function LaunchList({ rows }: { rows: import("@/lib/server/launches").Lau
                     {r.name}
                   </Link>
                 </td>
-                <td className="truncate px-3 text-slate-11">{r.preset}</td>
-                <td className="truncate px-3 text-slate-11">{r.by}</td>
+                <td className="hidden truncate px-3 text-slate-11 md:table-cell">{r.preset}</td>
+                <td className="hidden truncate px-3 text-slate-11 md:table-cell">{r.by}</td>
                 <td className="px-3 text-slate-11">
                   <TimeAgo iso={r.createdAt} />
                 </td>
@@ -278,7 +278,7 @@ export function LaunchList({ rows }: { rows: import("@/lib/server/launches").Lau
                   <Badge tone={pill.tone}>{pill.label}</Badge>
                 </td>
                 <td className="px-3 text-right tabular-nums">{r.ads}</td>
-                <td className={cn("px-3 text-right tabular-nums", r.failed ? "text-red-11" : "text-slate-11")}>{r.failed}</td>
+                <td className={cn("hidden px-3 text-right tabular-nums md:table-cell", r.failed ? "text-red-11" : "text-slate-11")}>{r.failed}</td>
               </tr>
             );
           })}

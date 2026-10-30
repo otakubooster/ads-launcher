@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { deleteCopySet, duplicateCopySet, saveCopySet } from "@/app/(app)/copy/actions";
 import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { TimeAgo } from "@/components/ui/time-ago";
@@ -25,6 +27,8 @@ export function CopyView({ sets, brands, canEdit }: { sets: CopySet[]; brands: {
   const router = useRouter();
   const [editing, setEditing] = React.useState<Partial<CopySet> | null>(null);
   const [busy, start] = React.useTransition();
+  const [duplicating, setDuplicating] = React.useState<CopySet | null>(null);
+  const { confirm, dialog } = useConfirm();
   const brandName = (id: string) => brands.find((b) => b.id === id)?.name ?? "—";
 
   return (
@@ -72,14 +76,15 @@ export function CopyView({ sets, brands, canEdit }: { sets: CopySet[]; brands: {
                           variant="ghost"
                           aria-label={`Duplicate ${s.name} to another language`}
                           disabled={busy}
-                          onClick={() => {
-                            const language = window.prompt("Duplicate to which language? (e.g. fr, de)");
-                            if (language) start(async () => (notify(await duplicateCopySet(s.id, language)), router.refresh()));
-                          }}
+                          onClick={() => setDuplicating(s)}
                         >
                           <Languages />
                         </Button>
-                        <Button size="icon-sm" variant="ghost" aria-label={`Delete ${s.name}`} disabled={busy} onClick={() => start(async () => (notify(await deleteCopySet(s.id)), router.refresh()))}>
+                        <Button size="icon-sm" variant="ghost" aria-label={`Delete ${s.name}`} disabled={busy} onClick={async () => {
+                          if (await confirm({ title: `Delete ${s.name}?`, description: "Launches that used it keep their copy. It won't be offered for new launches.", confirmLabel: "Delete copy set", destructive: true })) {
+                            start(async () => (notify(await deleteCopySet(s.id)), router.refresh()));
+                          }
+                        }}>
                           <Trash2 />
                         </Button>
                       </span>
@@ -91,12 +96,68 @@ export function CopyView({ sets, brands, canEdit }: { sets: CopySet[]; brands: {
           </table>
         </div>
       )}
+      <DuplicateDialog
+        set={duplicating}
+        onClose={() => setDuplicating(null)}
+        onDuplicate={(id, language) =>
+          start(async () => {
+            const res = await duplicateCopySet(id, language);
+            notify(res);
+            if (res.ok) setDuplicating(null);
+            router.refresh();
+          })
+        }
+        busy={busy}
+      />
+      {dialog}
       <Sheet open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
         <SheetContent side="right" aria-describedby={undefined} className="w-[520px]">
           {editing && <CopyEditor key={editing.id ?? "new"} set={editing} brands={brands} canEdit={canEdit} onDone={() => (setEditing(null), router.refresh())} />}
         </SheetContent>
       </Sheet>
     </>
+  );
+}
+
+/** Copies a set to another language; translating the texts is up to the editor. */
+function DuplicateDialog({ set, onClose, onDuplicate, busy }: { set: CopySet | null; onClose: () => void; onDuplicate: (id: string, language: string) => void; busy: boolean }) {
+  const [language, setLanguage] = React.useState("");
+  return (
+    <Dialog
+      open={set !== null}
+      onOpenChange={(o) => {
+        if (!o) {
+          setLanguage("");
+          onClose();
+        }
+      }}
+    >
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Duplicate to another language</DialogTitle>
+          <DialogDescription>A copy of {set?.name} you can then translate. The original stays as it is.</DialogDescription>
+        </DialogHeader>
+        <form
+          className="grid gap-4 px-5 pb-5"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (set && language.trim()) onDuplicate(set.id, language.trim().toLowerCase());
+          }}
+        >
+          <Field label="Language" htmlFor="duplicate-language" hint="ISO code, e.g. fr or de.">
+            <Input id="duplicate-language" value={language} onChange={(e) => setLanguage(e.target.value)} maxLength={10} autoFocus required />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" disabled={busy || !language.trim()}>
+              Duplicate
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -6,6 +6,7 @@ import { Check, CircleAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { changePreset, deleteDraft, saveDraft } from "@/app/(app)/launch/actions";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { LocalTime } from "@/components/ui/time-ago";
 import type { UserRole as Role } from "@fahd/db/schema";
 import type { CreativeItem } from "@/lib/server/creatives";
@@ -186,6 +187,7 @@ function Summary({
   role: Role;
 }) {
   const router = useRouter();
+  const { confirm, dialog } = useConfirm();
   const errors = plan.issues.filter((i) => i.level === "error").length + plan.adsets.reduce((n, a) => n + a.ads.reduce((m, ad) => m + ad.issues.filter((i) => i.level === "error").length, 0), 0);
   return (
     <aside aria-label="Launch summary" className="sticky top-6 grid gap-4 rounded-card border border-slate-6 p-4">
@@ -231,6 +233,7 @@ function Summary({
         size="sm"
         className="justify-self-start text-slate-11"
         onClick={async () => {
+          if (!(await confirm({ title: "Delete this draft?", description: "Its settings are lost. Nothing was created on Meta.", confirmLabel: "Delete draft", destructive: true }))) return;
           const res = await deleteDraft(launchId);
           if (!res.ok) return toast.error(res.error.title, { description: res.error.detail });
           toast.success("Draft deleted");
@@ -239,6 +242,7 @@ function Summary({
       >
         <Trash2 /> Delete draft
       </Button>
+      {dialog}
     </aside>
   );
 }

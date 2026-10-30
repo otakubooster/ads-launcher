@@ -60,4 +60,13 @@ test("a preset passes Test preset; naming, ad set templates and copy work (week 
   await sheet.getByRole("button", { name: "Save copy set" }).click();
   await expect(page.getByText('Saved "Glow launch".')).toBeVisible();
   await expect(page.getByRole("row", { name: /Glow launch/ })).toContainText("2 · 1 · 0");
+
+  // Duplicate to another language through its dialog, then delete the copy behind a confirm.
+  await page.getByRole("button", { name: "Duplicate Glow launch to another language" }).click();
+  await page.getByRole("dialog").getByLabel("Language").fill("fr");
+  await page.getByRole("dialog").getByRole("button", { name: "Duplicate" }).click();
+  await expect(page.getByText("Duplicated to fr. Translate the texts before launching.")).toBeVisible();
+  await page.getByRole("button", { name: "Delete Glow launch (fr)" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: /^Delete copy set/ }).click();
+  await expect(page.getByRole("row", { name: /Glow launch \(fr\)/ })).toHaveCount(0);
 });

@@ -17,6 +17,7 @@ import {
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, Input, NativeSelect } from "@/components/ui/input";
@@ -209,6 +210,7 @@ function PresetCard({ preset: p, accounts, assets, canEdit, onEdit, onDuplicate 
   const router = useRouter();
   const [busy, start] = React.useTransition();
   const [lines, setLines] = React.useState<{ label: string; ok: boolean; detail: string; warning?: boolean }[] | null>(null);
+  const { confirm, dialog } = useConfirm();
   const account = accounts.find((a) => a.id === p.adAccountId);
   const name = (kind: Asset["kind"], id: string | null) => (id ? (assets.find((a) => a.kind === kind && a.metaId === id)?.name ?? id) : "—");
   const optIns = Object.values(p.creativeFeatures).filter((v) => v === "OPT_IN").length;
@@ -235,12 +237,13 @@ function PresetCard({ preset: p, accounts, assets, canEdit, onEdit, onDuplicate 
               variant="ghost"
               aria-label="Delete preset"
               disabled={busy}
-              onClick={() =>
+              onClick={async () => {
+                if (!(await confirm({ title: `Delete preset ${p.market} · ${p.language}?`, description: "Launches that used it keep their history. New launches can't pick it.", confirmLabel: "Delete preset", destructive: true }))) return;
                 start(async () => {
                   notify(await deletePreset(p.id));
                   router.refresh();
-                })
-              }
+                });
+              }}
             >
               <Trash2 />
             </Button>
@@ -289,6 +292,7 @@ function PresetCard({ preset: p, accounts, assets, canEdit, onEdit, onDuplicate 
           ))}
         </ul>
       )}
+      {dialog}
     </li>
   );
 }
@@ -478,6 +482,7 @@ function PresetDialog({
 function NamingTab({ naming, canEdit }: { naming: Naming[]; canEdit: boolean }) {
   const router = useRouter();
   const [busy, start] = React.useTransition();
+  const { confirm, dialog } = useConfirm();
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       {(["campaign", "adset", "ad"] as const).map((level) => (
@@ -495,7 +500,11 @@ function NamingTab({ naming, canEdit }: { naming: Naming[]; canEdit: boolean }) 
                     <p className="truncate text-ui text-slate-11">{exampleName(n.pattern)}</p>
                   </div>
                   {canEdit && (
-                    <Button size="icon-sm" variant="ghost" aria-label={`Delete ${n.pattern}`} disabled={busy} onClick={() => start(async () => (notify(await deleteNamingTemplate(n.id)), router.refresh()))}>
+                    <Button size="icon-sm" variant="ghost" aria-label={`Delete ${n.pattern}`} disabled={busy} onClick={async () => {
+                        if (await confirm({ title: "Delete this naming template?", description: `${n.pattern} — presets using it fall back to the default pattern.`, confirmLabel: "Delete template", destructive: true })) {
+                          start(async () => (notify(await deleteNamingTemplate(n.id)), router.refresh()));
+                        }
+                      }}>
                       <Trash2 />
                     </Button>
                   )}
@@ -505,6 +514,7 @@ function NamingTab({ naming, canEdit }: { naming: Naming[]; canEdit: boolean }) 
           {canEdit && <NamingEditor level={level} />}
         </section>
       ))}
+      {dialog}
     </div>
   );
 }
@@ -551,6 +561,7 @@ function AdsetTemplatesTab({ templates, adsets, canEdit }: { templates: AdsetTem
   const [picked, setPicked] = React.useState<{ id: string; name: string } | null>(null);
   const [name, setName] = React.useState("");
   const [busy, start] = React.useTransition();
+  const { confirm, dialog } = useConfirm();
 
   return (
     <div className="grid gap-4">
@@ -572,7 +583,11 @@ function AdsetTemplatesTab({ templates, adsets, canEdit }: { templates: AdsetTem
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-body font-semibold">{t.name}</p>
                   {canEdit && (
-                    <Button size="icon-sm" variant="ghost" aria-label={`Delete ${t.name}`} disabled={busy} onClick={() => start(async () => (notify(await deleteAdsetTemplate(t.id)), router.refresh()))}>
+                    <Button size="icon-sm" variant="ghost" aria-label={`Delete ${t.name}`} disabled={busy} onClick={async () => {
+                        if (await confirm({ title: `Delete ${t.name}?`, description: "Presets using it fall back to Meta's defaults for new ad sets.", confirmLabel: "Delete template", destructive: true })) {
+                          start(async () => (notify(await deleteAdsetTemplate(t.id)), router.refresh()));
+                        }
+                      }}>
                       <Trash2 />
                     </Button>
                   )}
@@ -635,6 +650,7 @@ function AdsetTemplatesTab({ templates, adsets, canEdit }: { templates: AdsetTem
           </div>
         </DialogContent>
       </Dialog>
+      {dialog}
     </div>
   );
 }

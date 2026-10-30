@@ -12,7 +12,8 @@ export const buttonVariants = cva(
         secondary:
           "border border-slate-7 bg-slate-1 text-slate-12 hover:border-slate-8 hover:bg-slate-3 active:bg-slate-4 dark:bg-slate-2",
         ghost: "text-slate-11 hover:bg-slate-3 hover:text-slate-12 active:bg-slate-4 data-[state=open]:bg-slate-4",
-        destructive: "bg-red-9 text-white hover:bg-red-10",
+        // Soft red: white on red-9 is only 3.9:1, under AA for 13 px text.
+        destructive: "border border-red-7 bg-red-3 text-red-11 hover:border-red-8 hover:bg-red-4 active:bg-red-5",
       },
       size: {
         sm: "h-7 px-2 text-ui",

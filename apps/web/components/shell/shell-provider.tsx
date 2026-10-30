@@ -37,7 +37,7 @@ type ShellState = {
   user: ShellUser;
 };
 
-export type ShellUser = { name: string; email: string; role: Role };
+export type ShellUser = { name: string; email: string; role: Role; maxBudgetChangePct: number };
 
 const ShellContext = React.createContext<ShellState | null>(null);
 

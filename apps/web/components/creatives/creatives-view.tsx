@@ -9,6 +9,7 @@ import { deleteCreatives, finishUpload, prepareUpload, updateTags, uploadToAccou
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -54,6 +55,7 @@ export function CreativesView({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const { confirm, dialog } = useConfirm();
   const [brand, setBrand] = React.useState("");
   const [tag, setTag] = React.useState("");
   const [ratio, setRatio] = React.useState("");
@@ -210,13 +212,15 @@ export function CreativesView({
             size="sm"
             variant="ghost"
             disabled={busy}
-            onClick={() =>
+            onClick={async () => {
+              const n = selectedIds.length;
+              if (!(await confirm({ title: `Delete ${n} ${n === 1 ? "file" : "files"}?`, description: "They leave the library and storage. Ads already on Meta keep running.", confirmLabel: "Delete", destructive: true }))) return;
               start(async () => {
                 report(await deleteCreatives(selectedIds));
                 setSelected(new Set());
                 router.refresh();
-              })
-            }
+              });
+            }}
           >
             <Trash2 />
             Delete
@@ -225,6 +229,7 @@ export function CreativesView({
       )}
 
       <UploadDialog open={uploadOpen} onOpenChange={setUploadOpen} brands={brands} onDone={() => router.refresh()} />
+      {dialog}
       <TagDialog
         open={tagOpen}
         onOpenChange={setTagOpen}

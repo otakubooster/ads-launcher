@@ -15,7 +15,7 @@ export default async function LaunchLogPage() {
   const rows = await loadLaunchList(session.userId);
   const action =
     session.role !== "viewer" ? (
-      <Button variant="primary" asChild>
+      <Button variant="primary" asChild className="hidden md:inline-flex">
         <Link href="/launch">New launch</Link>
       </Button>
     ) : undefined;

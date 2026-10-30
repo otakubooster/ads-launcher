@@ -24,7 +24,10 @@ export function KpiCard({
         <span className="truncate text-kpi font-semibold tabular-nums">{value}</span>
         <Delta metric={metric} current={current} previous={previous} />
       </dd>
-      <Sparkline values={spark} label={`${label}, last 14 days`} />
+      {/* Inside a dd: a dl's groups may only hold dt and dd. */}
+      <dd>
+        <Sparkline values={spark} label={`${label}, last 14 days`} />
+      </dd>
     </div>
   );
 }

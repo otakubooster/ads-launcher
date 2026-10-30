@@ -5,11 +5,8 @@ import { activeDailyBudget } from "./objects";
 import { currencyDigits } from "./sync";
 import type { AnyDb } from "./types";
 
-/** Buyers can move a budget at most this much in one step (docs/spec.md → Spend guardrails). */
-export function maxChangePct() {
-  const n = Number(process.env.GUARDRAIL_MAX_CHANGE_PCT ?? 30);
-  return Number.isFinite(n) && n > 0 ? n : 30;
-}
+/** Buyers move a budget at most this much in one step unless their member row says otherwise (users.max_budget_change_pct). */
+export const DEFAULT_MAX_CHANGE_PCT = 30;
 
 export type GuardReason = "max_daily_budget" | "max_change" | "approval_threshold";
 export type GuardDecision =
@@ -43,7 +40,7 @@ function money(minor: number, currency: string) {
 export function evaluateGuardrails(input: GuardInput): GuardDecision {
   const { total, increase, currency } = input;
   const newTotal = total + Math.max(0, increase);
-  const limit = input.maxChangePct ?? maxChangePct();
+  const limit = input.maxChangePct ?? DEFAULT_MAX_CHANGE_PCT;
   if (increase > 0 && input.max !== null && newTotal > input.max) {
     return {
       decision: "block",
@@ -80,7 +77,7 @@ export function evaluateGuardrails(input: GuardInput): GuardDecision {
 }
 
 /** Loads the account's numbers and evaluates a spend change. `db` must be privileged. */
-export async function checkSpend(db: AnyDb, input: { adAccountId: string; role: UserRole; increase: number; changePct?: number | null }) {
+export async function checkSpend(db: AnyDb, input: { adAccountId: string; role: UserRole; increase: number; changePct?: number | null; maxChangePct?: number }) {
   const budget = await activeDailyBudget(db, input.adAccountId);
   const [account] = await db.select({ name: adAccounts.name }).from(adAccounts).where(eq(adAccounts.id, input.adAccountId));
   return evaluateGuardrails({
@@ -92,6 +89,7 @@ export async function checkSpend(db: AnyDb, input: { adAccountId: string; role: 
     approvalThreshold: budget.approvalThreshold,
     increase: input.increase,
     changePct: input.changePct,
+    maxChangePct: input.maxChangePct,
   });
 }
 

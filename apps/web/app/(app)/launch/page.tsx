@@ -4,6 +4,7 @@ import Link from "next/link";
 import { brands, launches, presets, users } from "@fahd/db/schema";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { EmptyState } from "@/components/empty-state";
+import { DesktopOnly } from "@/components/launch/desktop-only";
 import { NewLaunch } from "@/components/launch/new-launch";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -56,7 +57,11 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
     <>
       <PageHeader title="Launch" description="Bulk-launch ads from creatives and copy. Everything is created paused." />
       <div className="grid max-w-3xl gap-8">
-        {canLaunch && <NewLaunch presets={data.presets.map((p) => ({ id: p.id, label: `${p.brand} · ${p.market} · ${p.language}` }))} creativeIds={creativeIds} />}
+        {canLaunch && (
+          <DesktopOnly>
+            <NewLaunch presets={data.presets.map((p) => ({ id: p.id, label: `${p.brand} · ${p.market} · ${p.language}` }))} creativeIds={creativeIds} />
+          </DesktopOnly>
+        )}
         <section aria-labelledby="drafts-title" className="grid gap-3">
           <h2 id="drafts-title" className="text-section font-semibold">
             Drafts

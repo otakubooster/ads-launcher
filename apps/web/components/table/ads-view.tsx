@@ -40,6 +40,7 @@ import { formatMoney, formatRoas, moneyInputValue, parseMoneyInput } from "@/lib
 import type { ActionResult } from "@/lib/server/action-result";
 import type { AccountBudgets, AdsRow, Level } from "@/lib/server/ads";
 import { cn } from "@/lib/utils";
+import { useShell } from "@/components/shell/shell-provider";
 import { AdsTable, STICKY_WIDTHS, ROW_HEIGHT } from "./ads-table";
 import { ALL_COLUMNS, COLUMNS, PRESETS, PRESET_LABELS, toCsv, toTableRows, type ColumnId, type PresetId, type TableRow } from "./columns";
 import { DetailDrawer } from "./detail-drawer";
@@ -619,6 +620,8 @@ function BudgetEditor({
   const newTotal = budget && minor !== null ? budget.total - (row.status === "ACTIVE" ? current : 0) + (row.status === "ACTIVE" ? minor : 0) : null;
   const over = budget?.max !== null && budget?.max !== undefined && newTotal !== null && newTotal > budget.max;
   const change = minor !== null && current ? (minor - current) / current : 0;
+  const { user } = useShell();
+  const tooBig = user.role === "buyer" && Math.abs(change) * 100 > user.maxBudgetChangePct + 1e-9;
 
   return (
     <Popover open onOpenChange={(open) => !open && onClose()}>
@@ -652,10 +655,16 @@ function BudgetEditor({
               {over && " — over the limit"}
             </p>
           )}
-          {Math.abs(change) > 0.3 && <p className="text-ui text-amber-11">That&apos;s a {Math.round(Math.abs(change) * 100)}% change in one step.</p>}
+          {tooBig ? (
+            <p className="text-ui text-red-11">
+              Buyers can move a budget at most {user.maxBudgetChangePct}% per step. This is {Math.round(Math.abs(change) * 100)}%.
+            </p>
+          ) : (
+            Math.abs(change) > 0.3 && <p className="text-ui text-amber-11">That&apos;s a {Math.round(Math.abs(change) * 100)}% change in one step.</p>
+          )}
           <div className="flex justify-end gap-2">
             <Button onClick={onClose}>Cancel</Button>
-            <Button type="submit" variant="primary" disabled={busy || !minor || minor === current}>
+            <Button type="submit" variant="primary" disabled={busy || !minor || minor === current || tooBig}>
               Save
             </Button>
           </div>

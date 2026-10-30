@@ -10,7 +10,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <AppShell
       defaultCollapsed={store.get(SIDEBAR_COOKIE)?.value === "1"}
-      user={{ name: session.name, email: session.email, role: session.role }}
+      user={{ name: session.name, email: session.email, role: session.role, maxBudgetChangePct: session.maxBudgetChangePct }}
       {...shell}
     >
       {children}
