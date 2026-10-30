@@ -65,5 +65,20 @@ everything created paused. Screens checked in light and dark against the spec.
 - A write that times out is `ambiguous`: look the object up by name before retrying.
 - Meta tests replay fixtures in packages/meta/test/fixtures (Meta's response format)
   with a fake clock; CI never calls Meta.
+- packages/core holds the Meta ↔ database services both the web app and the worker use
+  (clientForConnection, syncConnectionAssets, verifyConnection, …). Pass it a privileged
+  db; check the member's role in the caller first.
+- Auth (apps/web/lib/server/auth.ts): Supabase email + password with TOTP (aal2) for
+  owners and admins; DEV_AUTH=1 swaps in a seeded-member picker outside production.
+  Pages call requireSession(); server actions call requireRole(...) and then write
+  through asUser() so RLS checks the same rule again. Wrap actions in runAction() for
+  {ok, message} / {ok: false, error: {title, detail, fix}} results.
+- meta_assets (pages, Instagram accounts, pixels) is the one table beyond the spec's
+  data model; new tables need the updated_at trigger in a custom migration (see 0004).
+- Fake Graph API (packages/meta/src/testing/fake-graph.ts, `pnpm fake-meta`): stateful,
+  Meta's response format, forced errors via POST /__fake/fail. META_GRAPH_HOST points the
+  client at it; ignored in production.
+- E2E: Playwright starts the fake Graph server and `next dev` with DEV_AUTH; global-setup
+  recreates E2E_DATABASE_URL. Use e2e/helpers.ts signIn() and ensureConnected().
 - DB tests run on PGlite (in-memory Postgres) with supabase-shim.sql; test/helpers.ts
   has asUser / asServiceRole, which always roll back. No database server needed.

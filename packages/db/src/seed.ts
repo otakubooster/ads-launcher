@@ -7,6 +7,8 @@ import * as s from "./schema";
  * campaigns → ad sets → ads, 28 days of insights ending yesterday, a finished
  * and a draft launch, change log entries and API usage readings.
  * Deterministic for a given `today`. All Meta IDs are fake.
+ * `minimal` seeds only the team, brands, templates, copy and creatives; connect
+ * the fake Graph server in Settings to fill in the Meta side.
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,7 +49,10 @@ function metaId(prefix: number, n: number) {
   return `${prefix}${String(n).padStart(14, "0")}`;
 }
 
-export async function seed(db: AnyPgDatabase, { today = new Date().toISOString().slice(0, 10) } = {}) {
+export async function seed(
+  db: AnyPgDatabase,
+  { today = new Date().toISOString().slice(0, 10), minimal = false }: { today?: string; minimal?: boolean } = {},
+) {
   const [existing] = await db.select({ n: sql<number>`count(*)::int` }).from(s.brands);
   if (existing && existing.n > 0) {
     throw new Error("The database already has data; the seed only runs on an empty database.");
@@ -62,20 +67,6 @@ export async function seed(db: AnyPgDatabase, { today = new Date().toISOString()
   await db.insert(s.users).values(Object.values(SEED_USERS).map((u) => ({ ...u })));
   const owner = SEED_USERS.owner.id;
 
-  const [connection] = await db
-    .insert(s.metaConnections)
-    .values({
-      businessId: "100000000000001",
-      businessName: "Fahd Holdings (seed)",
-      // Not a real token: decrypting it fails, so nothing can reach Meta with it.
-      tokenCiphertext: "c2VlZC1ub3QtYS1yZWFsLXRva2Vu",
-      tokenIv: "c2VlZC1pdg==",
-      tokenLast4: "SEED",
-      scopes: ["ads_management", "ads_read", "business_management"],
-      status: "unverified",
-    })
-    .returning({ id: s.metaConnections.id });
-
   const brandRows = await db
     .insert(s.brands)
     .values([
@@ -84,23 +75,6 @@ export async function seed(db: AnyPgDatabase, { today = new Date().toISOString()
     ])
     .returning();
   const brandId = (name: string) => brandRows.find((b) => b.name === name)!.id;
-
-  const accountRows = await db
-    .insert(s.adAccounts)
-    .values(
-      ACCOUNTS.map((a) => ({
-        metaId: a.metaId,
-        connectionId: connection!.id,
-        name: a.name,
-        currency: a.currency,
-        timezone: a.timezone,
-        accountStatus: 1,
-        maxDailyBudget: 500_000,
-        approvalThreshold: 100_000,
-        launchEnabled: true,
-      })),
-    )
-    .returning();
 
   const naming = await db
     .insert(s.namingTemplates)
@@ -127,26 +101,6 @@ export async function seed(db: AnyPgDatabase, { today = new Date().toISOString()
         ],
       },
     })
-    .returning();
-
-  const presetRows = await db
-    .insert(s.presets)
-    .values(
-      ACCOUNTS.map((a, i) => ({
-        brandId: brandId(a.brand),
-        market: a.market,
-        language: a.language,
-        adAccountId: accountRows[i]!.id,
-        pageId: metaId(3, i + 1),
-        instagramUserId: metaId(4, i + 1),
-        pixelId: metaId(5, i + 1),
-        linkUrl: `https://${a.brand.toLowerCase()}.example/${a.market.toLowerCase()}`,
-        urlTags: "utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.name}}",
-        creativeFeatures: { image_touchups: "OPT_IN", text_optimizations: "OPT_OUT", music: "OPT_OUT" } as s.CreativeFeatures,
-        namingTemplateId: naming.find((n) => n.level === "campaign")!.id,
-        adsetTemplateId: adsetTemplate!.id,
-      })),
-    )
     .returning();
 
   await db.insert(s.copySets).values([
@@ -189,6 +143,69 @@ export async function seed(db: AnyPgDatabase, { today = new Date().toISOString()
       })),
     ),
   );
+
+  await db.insert(s.savedViews).values({
+    userId: owner,
+    name: "Winners · ROAS",
+    level: "ad",
+    columns: ["status", "name", "spend", "purchases", "cpa", "roas", "hook_rate"],
+    filters: { roas: { gte: 2 } },
+    sort: [{ id: "roas", desc: true }],
+  });
+
+  if (minimal) return { ads: 0, insights: 0 };
+
+  // Everything below mirrors Meta. Minimal mode leaves it to a sync with the fake Graph server.
+  const [connection] = await db
+    .insert(s.metaConnections)
+    .values({
+      businessId: "100000000000001",
+      businessName: "Fahd Holdings (seed)",
+      // Not a real token: decrypting it fails, so nothing can reach Meta with it.
+      tokenCiphertext: "c2VlZC1ub3QtYS1yZWFsLXRva2Vu",
+      tokenIv: "c2VlZC1pdg==",
+      tokenLast4: "SEED",
+      scopes: ["ads_management", "ads_read", "business_management"],
+      status: "unverified",
+    })
+    .returning({ id: s.metaConnections.id });
+
+  const accountRows = await db
+    .insert(s.adAccounts)
+    .values(
+      ACCOUNTS.map((a) => ({
+        metaId: a.metaId,
+        connectionId: connection!.id,
+        name: a.name,
+        currency: a.currency,
+        timezone: a.timezone,
+        accountStatus: 1,
+        maxDailyBudget: 500_000,
+        approvalThreshold: 100_000,
+        launchEnabled: true,
+      })),
+    )
+    .returning();
+
+  const presetRows = await db
+    .insert(s.presets)
+    .values(
+      ACCOUNTS.map((a, i) => ({
+        brandId: brandId(a.brand),
+        market: a.market,
+        language: a.language,
+        adAccountId: accountRows[i]!.id,
+        pageId: metaId(3, i + 1),
+        instagramUserId: metaId(4, i + 1),
+        pixelId: metaId(5, i + 1),
+        linkUrl: `https://${a.brand.toLowerCase()}.example/${a.market.toLowerCase()}`,
+        urlTags: "utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.name}}",
+        creativeFeatures: { image_touchups: "OPT_IN", text_optimizations: "OPT_OUT", music: "OPT_OUT" } as s.CreativeFeatures,
+        namingTemplateId: naming.find((n) => n.level === "campaign")!.id,
+        adsetTemplateId: adsetTemplate!.id,
+      })),
+    )
+    .returning();
 
   // Meta mirror: per account 2 campaigns × 2 ad sets × 3 ads.
   const adsetStatuses = ["ACTIVE", "ACTIVE", "ACTIVE", "PAUSED"];
@@ -360,15 +377,6 @@ export async function seed(db: AnyPgDatabase, { today = new Date().toISOString()
       tier: "development_access",
     })),
   );
-
-  await db.insert(s.savedViews).values({
-    userId: owner,
-    name: "Winners · ROAS",
-    level: "ad",
-    columns: ["status", "name", "spend", "purchases", "cpa", "roas", "hook_rate"],
-    filters: { roas: { gte: 2 } },
-    sort: [{ id: "roas", desc: true }],
-  });
 
   return { ads: ads.length, insights: insightRows.length };
 }

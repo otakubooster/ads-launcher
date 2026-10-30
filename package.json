@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "pnpm --filter @fahd/web dev",
     "worker": "pnpm --filter @fahd/worker dev",
+    "fake-meta": "pnpm --filter @fahd/meta fake",
     "db:generate": "pnpm --filter @fahd/db generate",
     "db:migrate": "pnpm --filter @fahd/db migrate",
     "db:seed": "pnpm --filter @fahd/db seed",

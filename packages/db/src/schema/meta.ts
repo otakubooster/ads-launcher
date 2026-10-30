@@ -17,7 +17,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { authenticatedRole } from "drizzle-orm/supabase";
 import { MANAGERS, base, hasRole, membersCanRead, money, rolesCanWrite } from "./_shared";
-import { connectionStatus } from "./enums";
+import { assetKind, connectionStatus } from "./enums";
 
 /**
  * One per Business Manager. The token is AES-256-GCM encrypted by server code;
@@ -176,4 +176,29 @@ export const apiUsage = pgTable(
     tier: text("tier"),
   },
   (t) => [index("api_usage_account_recorded_idx").on(t.adAccountId, t.recordedAt.desc()), membersCanRead()],
+);
+
+/**
+ * Pages, Instagram accounts and pixels a connection can use, synced with the
+ * ad accounts. Pages belong to the Business Manager; Instagram accounts and
+ * pixels are listed per ad account. Not in the spec's data model; the presets
+ * screen and the week 1 check need them stored.
+ */
+export const metaAssets = pgTable(
+  "meta_assets",
+  {
+    ...base(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => metaConnections.id, { onDelete: "cascade" }),
+    adAccountId: uuid("ad_account_id").references(() => adAccounts.id, { onDelete: "cascade" }),
+    kind: assetKind("kind").notNull(),
+    metaId: text("meta_id").notNull(),
+    name: text("name").notNull(),
+    syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    unique("meta_assets_unique").on(t.connectionId, t.kind, t.metaId, t.adAccountId).nullsNotDistinct(),
+    membersCanRead(),
+  ],
 );

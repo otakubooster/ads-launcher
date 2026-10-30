@@ -27,10 +27,11 @@ type ShellState = {
   compare: boolean;
   setCompare: (compare: boolean) => void;
   lastSyncedAt: Date | null;
-
-  // Placeholder until Supabase Auth lands.
-  user: { name: string; role: Role };
+  usagePct: number | null;
+  user: ShellUser;
 };
+
+export type ShellUser = { name: string; email: string; role: Role };
 
 const ShellContext = React.createContext<ShellState | null>(null);
 
@@ -40,13 +41,16 @@ export function useShell() {
   return ctx;
 }
 
-export function ShellProvider({
-  defaultCollapsed,
-  children,
-}: {
+export type ShellProviderProps = {
   defaultCollapsed: boolean;
+  user: ShellUser;
+  accounts: ScopeAccount[];
+  lastSyncedAt: string | null;
+  usagePct: number | null;
   children: React.ReactNode;
-}) {
+};
+
+export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, usagePct, children }: ShellProviderProps) {
   const [sidebarCollapsed, setCollapsed] = React.useState(defaultCollapsed);
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
@@ -70,17 +74,18 @@ export function ShellProvider({
       setShortcutsOpen,
       mobileNavOpen,
       setMobileNavOpen,
-      accounts: [],
+      accounts,
       selectedAccountIds,
       setSelectedAccountIds,
       datePreset,
       setDatePreset,
       compare,
       setCompare,
-      lastSyncedAt: null,
-      user: { name: "Fahd", role: "owner" },
+      lastSyncedAt: lastSyncedAt ? new Date(lastSyncedAt) : null,
+      usagePct,
+      user,
     }),
-    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, datePreset, compare],
+    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, datePreset, compare, accounts, lastSyncedAt, usagePct, user],
   );
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

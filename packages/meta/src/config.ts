@@ -3,6 +3,15 @@ export const DEFAULT_API_VERSION = "v26.0";
 
 export const GRAPH_HOST = "https://graph.facebook.com";
 
+/**
+ * META_GRAPH_HOST points the client at the fake Graph server in development and
+ * tests. Ignored in production so a token can never be sent anywhere but Meta.
+ */
+export function graphHost() {
+  const override = process.env.META_GRAPH_HOST;
+  return override && process.env.NODE_ENV !== "production" ? override.replace(/\/$/, "") : GRAPH_HOST;
+}
+
 /** Permissions the system user token needs (docs/spec.md → Meta setup checklist). */
 export const REQUIRED_PERMISSIONS = [
   "ads_management",

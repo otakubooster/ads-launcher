@@ -1,23 +1,11 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/pglite";
-import { migrate } from "drizzle-orm/pglite/migrator";
-import * as schema from "../src/schema";
-import { seed } from "../src/seed";
+import { createTestDb as createBaseTestDb } from "../src/testing";
 import { withUser } from "../src/with-user";
 
 export const TODAY = "2026-10-30";
 
-/** In-memory Postgres with the Supabase shim, every migration and the seed. */
 export async function createTestDb({ seeded = true } = {}) {
-  const client = new PGlite();
-  await client.exec(readFileSync(fileURLToPath(new URL("../supabase-shim.sql", import.meta.url)), "utf8"));
-  const db = drizzle(client, { schema });
-  await migrate(db, { migrationsFolder: fileURLToPath(new URL("../migrations", import.meta.url)) });
-  if (seeded) await seed(db, { today: TODAY });
-  return db;
+  return createBaseTestDb({ seeded, today: TODAY });
 }
 
 export type TestDb = Awaited<ReturnType<typeof createTestDb>>;

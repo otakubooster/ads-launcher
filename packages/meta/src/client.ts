@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { DEFAULT_API_VERSION, GRAPH_HOST, LIMITS } from "./config";
+import { DEFAULT_API_VERSION, LIMITS, graphHost } from "./config";
 import { MetaApiError, errorFromGraph, type GraphErrorBody } from "./errors";
 import { assertPausedCreate } from "./guards";
 import { Throttle } from "./throttle";
@@ -153,7 +153,7 @@ export class MetaClient {
     const encoded = requests.map((r) => {
       const relativeUrl = normalizePath(r.relativeUrl);
       assertPausedCreate(r.method, relativeUrl, r.params);
-      const fields = new URLSearchParams(encodeParams(r.params)).toString();
+      const fields = batchEncode(r.params);
       return {
         method: r.method,
         name: r.name,
@@ -230,7 +230,7 @@ export class MetaClient {
   }
 
   private send(method: Method, path: string, params: Params | undefined, signal?: AbortSignal) {
-    const url = new URL(`${GRAPH_HOST}/${this.version}/${path}`);
+    const url = new URL(`${graphHost()}/${this.version}/${path}`);
     const fields = new URLSearchParams({ ...encodeParams(params), appsecret_proof: this.proof });
     const timeout = AbortSignal.timeout(this.timeoutMs);
     const init: RequestInit = {
@@ -270,6 +270,16 @@ export class MetaClient {
       // Logging must never fail a Meta call.
     }
   }
+}
+
+/**
+ * Form-encodes a batch body but leaves {result=name:$.path} references readable:
+ * Meta resolves them in the raw body text before decoding it.
+ */
+export function batchEncode(params?: Params) {
+  return new URLSearchParams(encodeParams(params))
+    .toString()
+    .replace(/%7Bresult%3D.*?%7D/g, (ref) => decodeURIComponent(ref));
 }
 
 function safeJson(text: string): unknown {

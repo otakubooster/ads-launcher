@@ -4,13 +4,13 @@ import * as React from "react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CommandPalette } from "./command-palette";
 import { ShortcutsDialog, useGlobalShortcuts } from "./keyboard-shortcuts";
-import { ShellProvider } from "./shell-provider";
+import { ShellProvider, type ShellProviderProps } from "./shell-provider";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./top-bar";
 
-export function AppShell({ defaultCollapsed, children }: { defaultCollapsed: boolean; children: React.ReactNode }) {
+export function AppShell({ children, ...props }: ShellProviderProps) {
   return (
-    <ShellProvider defaultCollapsed={defaultCollapsed}>
+    <ShellProvider {...props}>
       <TooltipProvider delayDuration={400}>
         <ShellLayout>{children}</ShellLayout>
       </TooltipProvider>

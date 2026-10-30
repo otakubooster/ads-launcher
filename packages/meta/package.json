@@ -7,11 +7,17 @@
   "types": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "fake": "tsx src/testing/serve-fake.ts"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "5.9.3",
-    "vitest": "5.0.5"
+    "vitest": "5.0.5",
+    "tsx": "4.23.15"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/fake-graph.ts"
   }
 }
