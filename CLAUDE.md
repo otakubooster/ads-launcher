@@ -119,3 +119,16 @@ everything created paused. Screens checked in light and dark against the spec.
   missing field and an empty one both mean null.
 - DB tests run on PGlite (in-memory Postgres) with supabase-shim.sql; test/helpers.ts
   has asUser / asServiceRole, which always roll back. No database server needed.
+- Launch: the draft lives in launches.structure (LaunchDraft, @fahd/shared/launch-plan).
+  buildPlan(draft, ctx) is pure and runs in the builder (contextFor in components/launch/
+  builder.tsx) and again in submitLaunch on the server (planContext); both must agree.
+  Names are unique within a parent so retries can find objects by name.
+- Runner (packages/core/src/launch.ts): createLaunchItems writes the campaign → ad set →
+  creative → ad tree with idempotency keys `<launchId>:<level>:<key>`; runLaunch walks it
+  (media first, creatives + ads batched 25 pairs per /batch), adopts objects found by name
+  after an attempt, stops on auth/policy/permission and fails only the subtree otherwise.
+  Activation (Create & activate) is a separate pass after every item is done.
+  resetFailedItems() puts failed items back to pending for "Retry failed items".
+- Builder UI: components/launch/*. Autosave 600 ms after the last edit; changing preset goes
+  through changePreset() and remounts the builder (key = presetId). Create buttons sit in the
+  sticky summary on the Review step. Phone previews are approximate, not Meta's renderer.

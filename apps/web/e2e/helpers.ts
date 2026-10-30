@@ -32,3 +32,26 @@ export const GRAPH = "http://127.0.0.1:4011";
 export async function fakeObjects(): Promise<{ id: string; type: string; name?: string; status?: string; daily_budget?: string }[]> {
   return (await (await fetch(`${GRAPH}/__fake/state`)).json()).objects;
 }
+
+/** A real PNG drawn on a canvas in the browser. */
+export async function makeImage(page: Page, width: number, height: number, label: string) {
+  const dataUrl = await page.evaluate(
+    async ([w, h, text]) => {
+      const canvas = new OffscreenCanvas(w as number, h as number);
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#5b5bd6";
+      ctx.fillRect(0, 0, w as number, h as number);
+      ctx.fillStyle = "#fff";
+      ctx.font = "120px sans-serif";
+      ctx.fillText(String(text), 80, 300);
+      const blob = await canvas.convertToBlob({ type: "image/png" });
+      return await new Promise<string>((r) => {
+        const fr = new FileReader();
+        fr.onload = () => r(String(fr.result));
+        fr.readAsDataURL(blob);
+      });
+    },
+    [width, height, label] as const,
+  );
+  return Buffer.from(dataUrl.split(",")[1]!, "base64");
+}
