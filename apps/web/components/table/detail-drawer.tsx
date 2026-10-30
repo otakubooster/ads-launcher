@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DateRange } from "@/lib/date-range";
-import { EMPTY, formatMoney, formatMoneyAxis, formatNumber, formatPercent, formatRelativeTime, formatRoas } from "@/lib/format";
+import { EMPTY, formatMoney, formatMoneyAxis, moneyAxisDomain, formatNumber, formatPercent, formatRelativeTime, formatRoas } from "@/lib/format";
 import { GOOD_WHEN_LOWER, delta, type Ratios } from "@/lib/metrics";
 import { cn } from "@/lib/utils";
 import type { TableRow } from "./columns";
@@ -199,29 +199,50 @@ function DailyChart({ data, currency }: { data: EntityDetail["daily"]; currency:
   const tooltip = { background: "var(--slate-1)", border: "1px solid var(--slate-6)", borderRadius: 8, fontSize: 12, color: "var(--slate-12)" };
   const axis = { fill: "var(--slate-11)", fontSize: 12 };
   return (
-    <div className="grid gap-2" aria-hidden>
-      <div className="h-28">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={points} syncId="drawer" margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap={2}>
-            <CartesianGrid stroke="var(--slate-4)" vertical={false} />
-            <XAxis dataKey="date" hide />
-            <YAxis tick={axis} axisLine={false} tickLine={false} width={56} tickFormatter={(v: number) => formatMoneyAxis(v, currency)} />
-            <ChartTooltip cursor={{ fill: "var(--slate-3)" }} contentStyle={tooltip} formatter={(v) => [formatMoney(Number(v), currency), "Spend"]} />
-            <Bar dataKey="spend" fill="var(--iris-9)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
-          </BarChart>
-        </ResponsiveContainer>
+    <>
+      <table className="sr-only">
+        <caption>Daily spend and ROAS</caption>
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Spend</th>
+            <th scope="col">ROAS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.map((d, i) => (
+            <tr key={d.date}>
+              <th scope="row">{d.date}</th>
+              <td>{formatMoney(d.spend, currency, { compact: false })}</td>
+              <td>{formatRoas(points[i]!.roas)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="grid gap-2" aria-hidden>
+        <div className="h-28">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart accessibilityLayer={false} data={points} syncId="drawer" margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap={2}>
+              <CartesianGrid stroke="var(--slate-4)" vertical={false} />
+              <XAxis dataKey="date" hide />
+              <YAxis tick={axis} axisLine={false} tickLine={false} width={56} domain={moneyAxisDomain(currency)} allowDecimals={false} tickFormatter={(v: number) => formatMoneyAxis(v, currency)} />
+              <ChartTooltip cursor={{ fill: "var(--slate-3)" }} contentStyle={tooltip} formatter={(v) => [formatMoney(Number(v), currency), "Spend"]} />
+              <Bar dataKey="spend" fill="var(--iris-9)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="h-24">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart accessibilityLayer={false} data={points} syncId="drawer" margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="var(--slate-4)" vertical={false} />
+              <XAxis dataKey="date" tick={axis} axisLine={false} tickLine={false} minTickGap={24} />
+              <YAxis tick={axis} axisLine={false} tickLine={false} width={56} tickFormatter={(v: number) => formatRoas(v)} />
+              <ChartTooltip cursor={{ stroke: "var(--slate-8)" }} contentStyle={tooltip} formatter={(v) => [formatRoas(Number(v)), "ROAS"]} />
+              <Line dataKey="roas" stroke="var(--iris-9)" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
       </div>
-      <div className="h-24">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={points} syncId="drawer" margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-            <CartesianGrid stroke="var(--slate-4)" vertical={false} />
-            <XAxis dataKey="date" tick={axis} axisLine={false} tickLine={false} minTickGap={24} />
-            <YAxis tick={axis} axisLine={false} tickLine={false} width={56} tickFormatter={(v: number) => formatRoas(v)} />
-            <ChartTooltip cursor={{ stroke: "var(--slate-8)" }} contentStyle={tooltip} formatter={(v) => [formatRoas(Number(v)), "ROAS"]} />
-            <Line dataKey="roas" stroke="var(--iris-9)" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
+    </>
   );
 }

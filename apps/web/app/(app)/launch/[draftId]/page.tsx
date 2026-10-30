@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { LaunchBuilder } from "@/components/launch/builder";
+import { DesktopOnly } from "@/components/launch/desktop-only";
 import { PageHeader } from "@/components/page-header";
 import { requireSession } from "@/lib/server/auth";
 import { loadCreatives } from "@/lib/server/creatives";
@@ -23,7 +24,9 @@ export default async function LaunchDraftPage({ params }: { params: Promise<{ dr
     <>
       <PageHeader title={data.launch.name} description={`${data.preset.brandName} · ${data.preset.market} · everything is created paused`} />
       {/* A preset switch rewrites the draft on the server: remount with it. */}
-      <LaunchBuilder key={data.launch.presetId} data={data} library={library.items} role={session.role} />
+      <DesktopOnly>
+        <LaunchBuilder key={data.launch.presetId} data={data} library={library.items} role={session.role} />
+      </DesktopOnly>
     </>
   );
 }

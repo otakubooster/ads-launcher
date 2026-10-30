@@ -140,7 +140,7 @@ everything created paused. Screens checked in light and dark against the spec.
   new ad sets, then a new campaign; change_log per write, also on failure; sets
   structure.activatedAt). Duplicate copies the draft without activateAfter/activatedAt.
 - Guardrails (packages/core/src/guardrails.ts): evaluateGuardrails() is pure (account max
-  blocks everyone; buyer step > GUARDRAIL_MAX_CHANGE_PCT blocks; buyer increase above the
+  blocks everyone; buyer step > users.max_budget_change_pct (default 30) blocks; buyer increase above the
   approval threshold → approval_requests). Web callers go through lib/server/guard.ts
   (guardActivate, guardBudget, guardLaunchActivation) before any spend-raising write;
   pauses and cuts never wait. Approving re-checks the max and runs the change as the
@@ -153,3 +153,14 @@ everything created paused. Screens checked in light and dark against the spec.
   (account_status ≠ 1), policy error 368, and a launch that finishes Failed.
 - Throw UserError(title, detail, fix) for copy written for people; runAction shows it as is.
 - Relative times in client components use <TimeAgo> (suppresses server/client drift).
+- e2e/ui-audit.spec.ts runs axe (WCAG 2.2 AA) on every screen in light and dark, last in
+  file order so screens have data. Keep it green: charts inside aria-hidden wrappers need
+  accessibilityLayer={false}; a <dl> group may only hold dt/dd; white text needs ≥4.5:1
+  (the destructive button is soft red for that reason).
+- Destructive actions confirm through useConfirm() (components/ui/confirm.tsx), never
+  window.confirm/prompt. Route skeletons come from components/skeletons.tsx.
+- Buyers' max budget step is per member (users.max_budget_change_pct, default 30); the
+  budget popover shows it and the server enforces it.
+- Below 768 px launching is desktop-only (components/launch/desktop-only.tsx).
+- Back-to-back Playwright runs can collide with the previous run's dev server; wait a few
+  seconds between runs if sign-in loops to /login.

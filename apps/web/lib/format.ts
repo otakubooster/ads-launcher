@@ -90,6 +90,11 @@ export function moneyInputValue(minor: number | null | undefined, currency: stri
 }
 
 /** Short money for chart axes: "$2.8k", "$950". */
+/** Money axes start at 0 and show at least 4 whole units, so an empty chart doesn't repeat "$0". */
+export function moneyAxisDomain(currency: string): [number, (max: number) => number] {
+  return [0, (max: number) => Math.max(max, 4 * 10 ** currencyDigits(currency))];
+}
+
 export function formatMoneyAxis(minor: number, currency: string) {
   const value = minor / 10 ** currencyDigits(currency);
   const out = new Intl.NumberFormat(LOCALE, { style: "currency", currency, notation: "compact", minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(value);

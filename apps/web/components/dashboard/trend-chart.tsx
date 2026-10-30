@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Button } from "@/components/ui/button";
-import { EMPTY, formatMoney, formatMoneyAxis, formatNumber, formatPercent, formatRoas } from "@/lib/format";
+import { EMPTY, formatMoney, formatMoneyAxis, formatNumber, formatPercent, formatRoas, moneyAxisDomain } from "@/lib/format";
 import { ratios, type Counts } from "@/lib/metrics";
 import type { DayPoint } from "@/lib/server/dashboard";
 
@@ -60,10 +60,10 @@ export function TrendChart({ series, previousSeries, currency }: { series: DayPo
       <p className="mt-3 text-label font-medium text-slate-11">Spend ({currency})</p>
       <div className="h-36" aria-hidden>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={points} syncId="trend" margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap={2}>
+          <BarChart accessibilityLayer={false} data={points} syncId="trend" margin={{ top: 4, right: 8, bottom: 0, left: 0 }} barCategoryGap={2}>
             <CartesianGrid stroke="var(--slate-4)" vertical={false} />
             <XAxis dataKey="date" hide />
-            <YAxis tick={AXIS} axisLine={false} tickLine={false} width={64} tickFormatter={(v: number) => formatMoneyAxis(v, currency)} />
+            <YAxis tick={AXIS} axisLine={false} tickLine={false} width={64} domain={moneyAxisDomain(currency)} allowDecimals={false} tickFormatter={(v: number) => formatMoneyAxis(v, currency)} />
             <Tooltip cursor={{ fill: "var(--slate-3)" }} contentStyle={TOOLTIP_STYLE} formatter={(v) => [formatMoney(Number(v), currency, { compact: false }), "Spend"]} />
             <Bar dataKey="spend" fill="var(--iris-9)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
           </BarChart>
@@ -87,7 +87,7 @@ export function TrendChart({ series, previousSeries, currency }: { series: DayPo
       </div>
       <div className="h-32" aria-hidden>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={points} syncId="trend" margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+          <LineChart accessibilityLayer={false} data={points} syncId="trend" margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
             <CartesianGrid stroke="var(--slate-4)" vertical={false} />
             <XAxis dataKey="date" tick={AXIS} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={24} />
             <YAxis tick={AXIS} axisLine={false} tickLine={false} width={64} tickFormatter={(v: number) => fmt(v)} />

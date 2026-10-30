@@ -54,7 +54,7 @@ export async function guardBudget(session: Session, level: "campaign" | "adset",
   const before = obj.dailyBudget ?? null;
   const changePct = before ? ((next - before) / before) * 100 : null;
   const increase = obj.status === "ACTIVE" && before !== null ? Math.max(0, next - before) : 0;
-  const decision = await checkSpend(getDb(), { adAccountId: obj.adAccountId, role: session.role, increase, changePct });
+  const decision = await checkSpend(getDb(), { adAccountId: obj.adAccountId, role: session.role, increase, changePct, maxChangePct: session.maxBudgetChangePct });
   return decide(session, decision, {
     adAccountId: obj.adAccountId,
     kind: "budget",

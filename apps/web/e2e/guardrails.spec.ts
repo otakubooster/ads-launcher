@@ -44,10 +44,14 @@ test("the account maximum blocks anyone; a buyer's raise above the threshold wai
   await expect(page.getByText("Above the account's daily budget limit")).toBeVisible();
   expect(await budgetOf("Arbor_FR_Prospecting")).toBe(15000);
 
-  // Buyer: a 33% cut is too big a step.
+  // Buyer: a 33% cut is too big a step; the editor says so before the server would refuse it.
   await signIn(page, "Omar Buyer");
-  await editBudget(page, "Arbor_FR_Prospecting", "100");
-  await expect(page.getByText("Change too large")).toBeVisible();
+  await page.goto("/ads");
+  await page.getByRole("button", { name: /^Edit budget for Arbor_FR_Prospecting/ }).click();
+  await page.getByLabel("Daily budget in EUR").fill("100");
+  await expect(page.getByText("Buyers can move a budget at most 30% per step. This is 33%.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await page.keyboard.press("Escape");
 
   // Buyer: +€30/day is within the max but above the €20 threshold.
   await editBudget(page, "Arbor_FR_Prospecting", "180");
