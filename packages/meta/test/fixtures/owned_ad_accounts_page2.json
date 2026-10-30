@@ -1,0 +1,22 @@
+{
+  "status": 200,
+  "headers": {},
+  "body": {
+    "data": [
+      {
+        "id": "act_200000000000003",
+        "name": "Arbor FR",
+        "currency": "EUR",
+        "timezone_name": "Europe/Paris",
+        "account_status": 2,
+        "amount_spent": "0"
+      }
+    ],
+    "paging": {
+      "cursors": {
+        "before": "QVFIUmZA",
+        "after": "QVFIUmZA"
+      }
+    }
+  }
+}

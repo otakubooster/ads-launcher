@@ -1,22 +1,53 @@
 import type { Metadata } from "next";
-import { Table2 } from "lucide-react";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/page-header";
+import { adAccounts, savedViews } from "@fahd/db/schema";
+import { count, desc, eq } from "drizzle-orm";
+import { AdsView, type SavedView } from "@/components/table/ads-view";
+import { parseFilters, resolveRanges } from "@/lib/filters";
+import { loadAccountBudgets, loadAdsRows, type Level } from "@/lib/server/ads";
+import { requireSession } from "@/lib/server/auth";
+import { asUser } from "@/lib/server/db";
 
 export const metadata: Metadata = { title: "Ads" };
 
-export default function AdsPage() {
+const LEVEL_PARAM: Record<string, Level> = { campaigns: "campaign", adsets: "adset", ads: "ad" };
+const uuids = (v: string | string[] | undefined) =>
+  (Array.isArray(v) ? v[0] : v)?.split(",").filter((id) => /^[0-9a-f-]{36}$/.test(id)) ?? [];
+
+export default async function AdsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  const session = await requireSession();
+  const params = await searchParams;
+  const level = LEVEL_PARAM[String(params.level ?? "campaigns")] ?? "campaign";
+  const filters = parseFilters(params);
+  const { range, previous } = resolveRanges(filters);
+  const campaignIds = uuids(params.campaigns);
+  const adsetIds = uuids(params.adsets);
+
+  const [rows, budgets, extra] = await Promise.all([
+    loadAdsRows(session.userId, { level, range, previous, accountIds: filters.accountIds, campaignIds: level === "campaign" ? [] : campaignIds, adsetIds: level === "ad" ? adsetIds : [] }),
+    loadAccountBudgets(session.userId, filters.accountIds),
+    asUser(session.userId, async (tx) => ({
+      views: await tx.select().from(savedViews).where(eq(savedViews.level, level)).orderBy(desc(savedViews.createdAt)),
+      accounts: (await tx.select({ n: count() }).from(adAccounts))[0]?.n ?? 0,
+    })),
+  ]);
+
   return (
     <>
-      <PageHeader title="Ads" description="Campaigns, ad sets and ads with live metrics." />
-      <EmptyState
-        icon={Table2}
-        title="No campaigns synced"
-        description="Campaigns, ad sets and ads appear here after the first sync with Meta."
-        action={<Button variant="primary" asChild><Link href="/settings">Connect Meta</Link></Button>}
+      <h1 className="sr-only">Ads</h1>
+      <AdsView
+        key={level}
+        level={level}
+        rows={rows}
+        budgets={budgets}
+        views={extra.views.map((v): SavedView => ({ id: v.id, name: v.name, columns: v.columns, filters: v.filters as Record<string, unknown>, sort: v.sort }))}
+        canEdit={session.role !== "viewer"}
+        range={range}
+        parentSelection={{ campaignIds, adsetIds }}
+        hasAccounts={extra.accounts > 0}
+        initialOpenId={uuids(params.open)[0]}
       />
     </>
   );
 }
+
+

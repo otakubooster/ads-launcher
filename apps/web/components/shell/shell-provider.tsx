@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { filterQuery, parseFilters, writeFilters, type Filters } from "@/lib/filters";
 import type { DatePresetId } from "@/lib/date-range";
 import type { ScopeAccount } from "@/lib/scope";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
@@ -26,11 +28,16 @@ type ShellState = {
   setDatePreset: (preset: DatePresetId) => void;
   compare: boolean;
   setCompare: (compare: boolean) => void;
+  /** "?range=…" to append to in-app links so filters carry across pages. */
+  query: string;
   lastSyncedAt: Date | null;
-
-  // Placeholder until Supabase Auth lands.
-  user: { name: string; role: Role };
+  usagePct: number | null;
+  killSwitchOn: boolean;
+  pendingApprovals: number;
+  user: ShellUser;
 };
+
+export type ShellUser = { name: string; email: string; role: Role; maxBudgetChangePct: number };
 
 const ShellContext = React.createContext<ShellState | null>(null);
 
@@ -40,20 +47,40 @@ export function useShell() {
   return ctx;
 }
 
-export function ShellProvider({
-  defaultCollapsed,
-  children,
-}: {
+export type ShellProviderProps = {
   defaultCollapsed: boolean;
+  user: ShellUser;
+  accounts: ScopeAccount[];
+  lastSyncedAt: string | null;
+  usagePct: number | null;
+  killSwitchOn: boolean;
+  pendingApprovals: number;
   children: React.ReactNode;
-}) {
+};
+
+export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, usagePct, killSwitchOn, pendingApprovals, children }: ShellProviderProps) {
   const [sidebarCollapsed, setCollapsed] = React.useState(defaultCollapsed);
   const [commandOpen, setCommandOpen] = React.useState(false);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const [mobileNavOpen, setMobileNavOpen] = React.useState(false);
-  const [selectedAccountIds, setSelectedAccountIds] = React.useState<string[]>([]);
-  const [datePreset, setDatePreset] = React.useState<DatePresetId>("last_7d");
-  const [compare, setCompare] = React.useState(true);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const filters = parseFilters(searchParams);
+  const { preset: datePreset, compare, accountIds: selectedAccountIds } = filters;
+
+  const setFilters = React.useCallback(
+    (patch: Partial<Filters>) => {
+      const next = writeFilters(searchParams, { ...parseFilters(searchParams), ...patch });
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+  const setSelectedAccountIds = React.useCallback((accountIds: string[]) => setFilters({ accountIds }), [setFilters]);
+  const setDatePreset = React.useCallback((preset: DatePresetId) => setFilters({ preset }), [setFilters]);
+  const setCompare = React.useCallback((value: boolean) => setFilters({ compare: value }), [setFilters]);
+  const query = filterQuery(searchParams);
 
   const setSidebarCollapsed = React.useCallback((collapsed: boolean) => {
     setCollapsed(collapsed);
@@ -70,17 +97,21 @@ export function ShellProvider({
       setShortcutsOpen,
       mobileNavOpen,
       setMobileNavOpen,
-      accounts: [],
+      accounts,
       selectedAccountIds,
       setSelectedAccountIds,
       datePreset,
       setDatePreset,
       compare,
       setCompare,
-      lastSyncedAt: null,
-      user: { name: "Fahd", role: "owner" },
+      query,
+      lastSyncedAt: lastSyncedAt ? new Date(lastSyncedAt) : null,
+      usagePct,
+      killSwitchOn,
+      pendingApprovals,
+      user,
     }),
-    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, datePreset, compare],
+    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, setSelectedAccountIds, datePreset, setDatePreset, compare, setCompare, query, accounts, lastSyncedAt, usagePct, killSwitchOn, pendingApprovals, user],
   );
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

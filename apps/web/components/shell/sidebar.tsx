@@ -27,7 +27,7 @@ export function Sidebar() {
 /** Shared by the desktop sidebar and the mobile sheet (data-sidebar="expanded"). */
 export function SidebarContent({ inSheet = false, onNavigate }: { inSheet?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { sidebarCollapsed, setSidebarCollapsed } = useShell();
+  const { sidebarCollapsed, setSidebarCollapsed, query } = useShell();
   const wide = useMediaQuery("(min-width: 1280px)", true);
   const isRail = !inSheet && (sidebarCollapsed || !wide);
 
@@ -49,7 +49,7 @@ export function SidebarContent({ inSheet = false, onNavigate }: { inSheet?: bool
           const Icon = item.icon;
           const link = (
             <Link
-              href={item.href}
+              href={`${item.href}${query}`}
               onClick={onNavigate}
               aria-current={active ? "page" : undefined}
               aria-label={item.label}
@@ -93,8 +93,15 @@ export function SidebarContent({ inSheet = false, onNavigate }: { inSheet?: bool
 
 /** Fed by api_usage rows from Meta's rate-limit headers once accounts sync. */
 function ApiUsageMeter({ isRail }: { isRail: boolean }) {
-  const usagePct: number | null = null;
-  const caption = usagePct === null ? "No accounts connected" : `Highest account at ${usagePct}%`;
+  const { usagePct, accounts } = useShell();
+  const caption =
+    usagePct === null
+      ? accounts.length
+        ? "No calls in the last hour"
+        : "No accounts connected"
+      : usagePct >= 75
+        ? "Paused: Meta usage is high"
+        : "Highest account, last hour";
 
   if (isRail) {
     return (
@@ -117,9 +124,13 @@ function ApiUsageMeter({ isRail }: { isRail: boolean }) {
     <div className="flex flex-col gap-1.5 px-2.5 py-2 rail:hidden">
       <div className="flex items-center justify-between text-label">
         <span className="font-medium text-slate-11">API usage</span>
-        <span className="text-slate-11 tabular-nums">—</span>
+        <span className="text-slate-11 tabular-nums">{usagePct === null ? "—" : `${Math.round(usagePct)}%`}</span>
       </div>
-      <Progress value={usagePct ?? 0} aria-label="API usage" />
+      <Progress
+        value={usagePct ?? 0}
+        aria-label="API usage"
+        indicatorClassName={usagePct !== null && usagePct >= 75 ? "bg-red-9" : usagePct !== null && usagePct >= 50 ? "bg-amber-9" : undefined}
+      />
       <span className="text-label text-slate-11">{caption}</span>
     </div>
   );

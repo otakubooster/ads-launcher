@@ -1,0 +1,1 @@
+ALTER TABLE "creative_uploads" ADD COLUMN "thumbnail_url" text;

@@ -1,94 +1,95 @@
 import type { Metadata } from "next";
-import { Building2, Gauge, Plug, Users } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { NotYetButton } from "@/components/not-yet-button";
+import { adAccounts, apiUsage, appSettings, metaAssets, metaConnections, users } from "@fahd/db/schema";
+import { REQUIRED_PERMISSIONS } from "@fahd/meta";
+import { asc, count, desc, eq } from "drizzle-orm";
 import { PageHeader } from "@/components/page-header";
+import { requireSession } from "@/lib/server/auth";
+import { asUser } from "@/lib/server/db";
+import { AccountsSection, ConnectionsSection, KillSwitchSection, SettingsNav, TeamSection, UsageSection } from "./sections";
 
 export const metadata: Metadata = { title: "Settings" };
 
-const SECTIONS: {
-  id: string;
-  title: string;
-  description: string;
-  icon: LucideIcon;
-  empty: string;
-  action?: { label: string; message: string };
-}[] = [
-  {
-    id: "meta",
-    title: "Meta connections",
-    description: "One system user token per Business Manager. Tokens are encrypted and never reach the browser.",
-    icon: Plug,
-    empty: "No Business Manager connected. Paste a system user token to connect one.",
-    action: { label: "Add connection", message: "Meta connections arrive in the next build session." },
-  },
-  {
-    id: "accounts",
-    title: "Ad accounts",
-    description: "Launch access, max daily budget and approval threshold per account.",
-    icon: Building2,
-    empty: "Ad accounts appear here once a Business Manager is connected.",
-  },
-  {
-    id: "team",
-    title: "Team",
-    description: "Owners, admins, media buyers and viewers.",
-    icon: Users,
-    empty: "Invite teammates by email once sign-in is set up.",
-    action: { label: "Invite", message: "Team invites arrive with authentication." },
-  },
-  {
-    id: "usage",
-    title: "API usage",
-    description: "Per-account usage from Meta's rate-limit headers. Queues pause at 75%.",
-    icon: Gauge,
-    empty: "Usage bars appear once accounts start syncing.",
-  },
-];
+export default async function SettingsPage() {
+  const session = await requireSession();
+  const data = await asUser(session.userId, async (tx) => {
+    const connections = await tx
+      .select({
+        id: metaConnections.id,
+        businessId: metaConnections.businessId,
+        businessName: metaConnections.businessName,
+        tokenLast4: metaConnections.tokenLast4,
+        scopes: metaConnections.scopes,
+        status: metaConnections.status,
+        lastVerifiedAt: metaConnections.lastVerifiedAt,
+      })
+      .from(metaConnections)
+      .orderBy(asc(metaConnections.createdAt));
+    const assets = await tx
+      .select({ connectionId: metaAssets.connectionId, kind: metaAssets.kind, n: count() })
+      .from(metaAssets)
+      .groupBy(metaAssets.connectionId, metaAssets.kind);
+    const accounts = await tx.select().from(adAccounts).orderBy(asc(adAccounts.name));
+    const members = await tx.select().from(users).orderBy(asc(users.email));
+    const usage = await tx
+      .selectDistinctOn([apiUsage.adAccountId], { adAccountId: apiUsage.adAccountId, pct: apiUsage.accUtilPct, at: apiUsage.recordedAt, tier: apiUsage.tier })
+      .from(apiUsage)
+      .orderBy(apiUsage.adAccountId, desc(apiUsage.recordedAt));
+    const [kill] = await tx.select().from(appSettings).where(eq(appSettings.key, "kill_switch"));
+    return { connections, assets, accounts, members, usage, kill };
+  });
 
-export default function SettingsPage() {
+  const role = session.role;
+  const accountsByConnection = new Map<string, number>();
+  for (const a of data.accounts) accountsByConnection.set(a.connectionId, (accountsByConnection.get(a.connectionId) ?? 0) + 1);
+
   return (
     <>
       <PageHeader title="Settings" description="Meta connections, guardrails, team and API usage." />
       <div className="grid gap-8 lg:grid-cols-[180px_minmax(0,1fr)]">
-        <nav aria-label="Settings sections" className="hidden lg:block">
-          <ul className="sticky top-0 grid gap-0.5">
-            {SECTIONS.map((s) => (
-              <li key={s.id}>
-                <a
-                  href={`#${s.id}`}
-                  className="flex h-8 items-center rounded-control px-2.5 text-ui font-medium text-slate-11 hover:bg-slate-3 hover:text-slate-12"
-                >
-                  {s.title}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-        <div className="grid max-w-3xl gap-6">
-          {SECTIONS.map((s) => (
-            <section key={s.id} id={s.id} aria-labelledby={`${s.id}-title`} className="scroll-mt-6 rounded-card border border-slate-6">
-              <header className="flex items-start justify-between gap-4 border-b border-slate-6 px-5 py-4">
-                <div>
-                  <h2 id={`${s.id}-title`} className="text-section font-semibold">
-                    {s.title}
-                  </h2>
-                  <p className="mt-0.5 text-body text-slate-11">{s.description}</p>
-                </div>
-                {s.action && (
-                  <NotYetButton message={s.action.message} className="shrink-0">
-                    {s.action.label}
-                  </NotYetButton>
-                )}
-              </header>
-              <div className="flex items-center gap-3 px-5 py-6 text-body text-slate-11">
-                <s.icon className="size-5 shrink-0" />
-                {s.empty}
-              </div>
-            </section>
-          ))}
+        <SettingsNav />
+        <div className="grid max-w-4xl min-w-0 gap-6">
+          <ConnectionsSection
+            canManage={role === "owner"}
+            canSync={role === "owner" || role === "admin"}
+            required={[...REQUIRED_PERMISSIONS]}
+            connections={data.connections.map((c) => ({
+              ...c,
+              lastVerifiedAt: c.lastVerifiedAt?.toISOString() ?? null,
+              adAccounts: accountsByConnection.get(c.id) ?? 0,
+              assets: Object.fromEntries(data.assets.filter((a) => a.connectionId === c.id).map((a) => [a.kind, a.n])),
+            }))}
+          />
+          <AccountsSection
+            canEdit={role === "owner" || role === "admin"}
+            accounts={data.accounts.map((a) => ({
+              id: a.id,
+              metaId: a.metaId,
+              name: a.name,
+              currency: a.currency,
+              timezone: a.timezone,
+              accountStatus: a.accountStatus,
+              maxDailyBudget: a.maxDailyBudget,
+              approvalThreshold: a.approvalThreshold,
+              launchEnabled: a.launchEnabled,
+            }))}
+          />
+          <KillSwitchSection on={Boolean((data.kill?.value as { on?: boolean } | undefined)?.on)} since={data.kill?.updatedAt.toISOString() ?? null} canFlip={role === "owner"} />
+          <TeamSection
+            canManage={role === "owner" || role === "admin"}
+            canCreateOwners={role === "owner"}
+            currentUserId={session.userId}
+            members={data.members.map((m) => ({ id: m.id, name: m.name, email: m.email, role: m.role }))}
+          />
+          <UsageSection
+            rows={data.accounts.map((a) => {
+              const u = data.usage.find((x) => x.adAccountId === a.id);
+              return { id: a.id, name: a.name, pct: u?.pct ?? null, at: u?.at.toISOString() ?? null, tier: u?.tier ?? null };
+            })}
+          />
         </div>
       </div>
     </>
   );
 }
+
+export const dynamic = "force-dynamic";

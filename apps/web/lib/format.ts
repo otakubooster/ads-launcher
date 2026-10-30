@@ -72,3 +72,31 @@ export function formatRelativeTime(then: Date, now: Date = new Date()) {
   if (hours < 24) return `${hours} h ago`;
   return `${Math.round(hours / 24)} d ago`;
 }
+
+/** "1,250.50" in USD → 125050 minor units; null when empty or not a number. */
+export function parseMoneyInput(input: string, currency: string): number | null {
+  const cleaned = input.replace(/[^0-9.,-]/g, "").replace(/,/g, "");
+  if (cleaned === "" || cleaned === "-") return null;
+  const value = Number(cleaned);
+  if (!Number.isFinite(value)) return null;
+  return Math.round(value * 10 ** currencyDigits(currency));
+}
+
+/** 125050 minor units in USD → "1250.50", for an input's value. */
+export function moneyInputValue(minor: number | null | undefined, currency: string) {
+  if (minor === null || minor === undefined) return "";
+  const digits = currencyDigits(currency);
+  return (minor / 10 ** digits).toFixed(digits);
+}
+
+/** Short money for chart axes: "$2.8k", "$950". */
+/** Money axes start at 0 and show at least 4 whole units, so an empty chart doesn't repeat "$0". */
+export function moneyAxisDomain(currency: string): [number, (max: number) => number] {
+  return [0, (max: number) => Math.max(max, 4 * 10 ** currencyDigits(currency))];
+}
+
+export function formatMoneyAxis(minor: number, currency: string) {
+  const value = minor / 10 ** currencyDigits(currency);
+  const out = new Intl.NumberFormat(LOCALE, { style: "currency", currency, notation: "compact", minimumFractionDigits: 0, maximumFractionDigits: 1 }).format(value);
+  return lowerThousands(out);
+}

@@ -1,2 +1,4 @@
-// Drizzle schema, migrations, RLS policies and SQL views. Built in session 2.
-export {};
+export * from "./schema";
+export { createDb, type Db } from "./client";
+export { withUser } from "./with-user";
+export { seed, SEED_USERS } from "./seed";

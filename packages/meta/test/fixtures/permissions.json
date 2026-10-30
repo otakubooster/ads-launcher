@@ -1,0 +1,44 @@
+{
+  "status": 200,
+  "headers": {},
+  "body": {
+    "data": [
+      {
+        "permission": "ads_management",
+        "status": "granted"
+      },
+      {
+        "permission": "ads_read",
+        "status": "granted"
+      },
+      {
+        "permission": "business_management",
+        "status": "granted"
+      },
+      {
+        "permission": "pages_show_list",
+        "status": "granted"
+      },
+      {
+        "permission": "pages_read_engagement",
+        "status": "granted"
+      },
+      {
+        "permission": "pages_manage_ads",
+        "status": "granted"
+      },
+      {
+        "permission": "instagram_basic",
+        "status": "granted"
+      },
+      {
+        "permission": "public_profile",
+        "status": "granted"
+      },
+      {
+        "permission": "pages_manage_metadata",
+        "status": "declined"
+      }
+    ]
+  }
+}

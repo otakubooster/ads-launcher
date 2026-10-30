@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Keyboard, Moon, Pause, Plus, RefreshCw, ScrollText, Sun } from "lucide-react";
+import { Keyboard, Moon, OctagonX, Pause, Plus, RefreshCw, ScrollText, ShieldCheck, Sun } from "lucide-react";
 import { toast } from "sonner";
 import {
   CommandDialog,
@@ -16,13 +16,14 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 import { Kbd } from "@/components/ui/kbd";
+import { LAUNCH_FEATURES } from "@/lib/features";
 import { NAV_ITEMS } from "@/lib/nav";
 import { useShell } from "./shell-provider";
 
 export function CommandPalette() {
   const router = useRouter();
   const { resolvedTheme, setTheme } = useTheme();
-  const { commandOpen, setCommandOpen, setShortcutsOpen } = useShell();
+  const { commandOpen, setCommandOpen, setShortcutsOpen, query } = useShell();
 
   function run(action: () => void) {
     setCommandOpen(false);
@@ -43,18 +44,30 @@ export function CommandPalette() {
             No results. Campaigns, ad sets, ads and presets become searchable after the first sync.
           </CommandEmpty>
           <CommandGroup heading="Actions">
-            <CommandItem onSelect={() => run(() => router.push("/launch"))}>
-              <Plus />
-              New launch
-            </CommandItem>
+            {LAUNCH_FEATURES && (
+              <CommandItem onSelect={() => run(() => router.push("/launch"))}>
+                <Plus />
+                New launch
+              </CommandItem>
+            )}
             <CommandItem disabled>
               <Pause />
               Pause selected
               <span className="ml-auto text-label text-slate-11">Select rows in Ads first</span>
             </CommandItem>
-            <CommandItem onSelect={() => run(() => router.push("/launches"))}>
-              <ScrollText />
-              Open launch log
+            {LAUNCH_FEATURES && (
+              <CommandItem onSelect={() => run(() => router.push("/launches"))}>
+                <ScrollText />
+                Open launch log
+              </CommandItem>
+            )}
+            <CommandItem onSelect={() => run(() => router.push("/approvals"))}>
+              <ShieldCheck />
+              Review approvals
+            </CommandItem>
+            <CommandItem value="kill switch stop everything" onSelect={() => run(() => router.push("/settings#kill-switch"))}>
+              <OctagonX />
+              Kill switch
             </CommandItem>
             <CommandItem
               onSelect={() =>
@@ -68,7 +81,7 @@ export function CommandPalette() {
           <CommandSeparator />
           <CommandGroup heading="Go to">
             {NAV_ITEMS.map((item) => (
-              <CommandItem key={item.href} value={`go ${item.label}`} onSelect={() => run(() => router.push(item.href))}>
+              <CommandItem key={item.href} value={`go ${item.label}`} onSelect={() => run(() => router.push(`${item.href}${query}`))}>
                 <item.icon />
                 {item.label}
                 {item.goKey && (
