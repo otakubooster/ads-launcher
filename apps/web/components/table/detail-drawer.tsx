@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { History, X } from "lucide-react";
-import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from "recharts";
 import type { EntityDetail } from "@/app/(app)/ads/actions";
 import { loadDetailAction } from "@/app/(app)/ads/actions";
 import { StatusDot } from "@/components/ui/badge";
@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { DateRange } from "@/lib/date-range";
-import { EMPTY, formatMoney, formatNumber, formatPercent, formatRelativeTime, formatRoas } from "@/lib/format";
+import { EMPTY, formatMoney, formatMoneyAxis, formatNumber, formatPercent, formatRelativeTime, formatRoas } from "@/lib/format";
 import { GOOD_WHEN_LOWER, delta, type Ratios } from "@/lib/metrics";
 import { cn } from "@/lib/utils";
 import type { TableRow } from "./columns";
@@ -192,26 +192,36 @@ export function Delta({ metric, current, previous }: { metric: string; current: 
   );
 }
 
+/** Spend and ROAS as two aligned charts (never a dual-axis chart). */
 function DailyChart({ data, currency }: { data: EntityDetail["daily"]; currency: string }) {
   if (data.length === 0) return <p className="text-body text-slate-11">No delivery in this period.</p>;
-  const points = data.map((d) => ({ date: d.date.slice(5), spend: d.spend, roas: d.spend ? d.purchaseValue / d.spend : null }));
+  const points = data.map((d) => ({ date: d.date.slice(5).replace("-", "/"), spend: d.spend, roas: d.spend ? d.purchaseValue / d.spend : null }));
+  const tooltip = { background: "var(--slate-1)", border: "1px solid var(--slate-6)", borderRadius: 8, fontSize: 12, color: "var(--slate-12)" };
+  const axis = { fill: "var(--slate-11)", fontSize: 12 };
   return (
-    <div className="h-48">
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={points} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-          <CartesianGrid stroke="var(--slate-4)" vertical={false} />
-          <XAxis dataKey="date" tick={{ fill: "var(--slate-11)", fontSize: 12 }} axisLine={false} tickLine={false} />
-          <YAxis yAxisId="spend" hide />
-          <YAxis yAxisId="roas" orientation="right" hide />
-          <ChartTooltip
-            cursor={{ fill: "var(--slate-3)" }}
-            contentStyle={{ background: "var(--slate-1)", border: "1px solid var(--slate-6)", borderRadius: 8, fontSize: 12 }}
-            formatter={(value, name) => (name === "spend" ? [formatMoney(Number(value), currency), "Spend"] : [formatRoas(Number(value)), "ROAS"])}
-          />
-          <Bar yAxisId="spend" dataKey="spend" fill="var(--slate-7)" radius={[2, 2, 0, 0]} isAnimationActive={false} />
-          <Line yAxisId="roas" dataKey="roas" stroke="var(--iris-9)" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
-        </ComposedChart>
-      </ResponsiveContainer>
+    <div className="grid gap-2" aria-hidden>
+      <div className="h-28">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={points} syncId="drawer" margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap={2}>
+            <CartesianGrid stroke="var(--slate-4)" vertical={false} />
+            <XAxis dataKey="date" hide />
+            <YAxis tick={axis} axisLine={false} tickLine={false} width={56} tickFormatter={(v: number) => formatMoneyAxis(v, currency)} />
+            <ChartTooltip cursor={{ fill: "var(--slate-3)" }} contentStyle={tooltip} formatter={(v) => [formatMoney(Number(v), currency), "Spend"]} />
+            <Bar dataKey="spend" fill="var(--iris-9)" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="h-24">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={points} syncId="drawer" margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+            <CartesianGrid stroke="var(--slate-4)" vertical={false} />
+            <XAxis dataKey="date" tick={axis} axisLine={false} tickLine={false} minTickGap={24} />
+            <YAxis tick={axis} axisLine={false} tickLine={false} width={56} tickFormatter={(v: number) => formatRoas(v)} />
+            <ChartTooltip cursor={{ stroke: "var(--slate-8)" }} contentStyle={tooltip} formatter={(v) => [formatRoas(Number(v)), "ROAS"]} />
+            <Line dataKey="roas" stroke="var(--iris-9)" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   );
 }

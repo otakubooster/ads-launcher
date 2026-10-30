@@ -94,5 +94,11 @@ everything created paused. Screens checked in light and dark against the spec.
   (see anyOf in lib/server/ads.ts).
 - Every Meta write from the UI goes through `logged()` in app/(app)/ads/actions.ts or the
   same pattern: one change_log row with before, after and Meta's response, also on failure.
+- Charts: never a dual-axis chart. Two measures → two aligned charts with a shared x axis
+  and syncId (see components/dashboard/trend-chart.tsx). One iris-9 series per chart; the
+  comparison period is dashed slate-9 (slate-8 fails 3:1 contrast) with a legend. Give
+  every chart an sr-only table. Axis money uses formatMoneyAxis.
+- Mixed currencies convert to REPORTING_CURRENCY with packages/core/src/fx.ts (FX_RATES env,
+  Redis cache, ECB via frankfurter). Unconvertible accounts are excluded and named, never guessed.
 - DB tests run on PGlite (in-memory Postgres) with supabase-shim.sql; test/helpers.ts
   has asUser / asServiceRole, which always roll back. No database server needed.

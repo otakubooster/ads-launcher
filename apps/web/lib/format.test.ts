@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY,
+  formatMoneyAxis,
   moneyInputValue,
   parseMoneyInput,
   formatMoney,
@@ -70,5 +71,13 @@ describe("money inputs", () => {
   it("prints minor units for an input", () => {
     expect(moneyInputValue(125050, "USD")).toBe("1250.50");
     expect(moneyInputValue(null, "USD")).toBe("");
+  });
+});
+
+describe("formatMoneyAxis", () => {
+  it("is always compact", () => {
+    expect(formatMoneyAxis(280_000, "USD")).toBe("$2.8k");
+    expect(formatMoneyAxis(95_000, "USD")).toBe("$950");
+    expect(formatMoneyAxis(0, "EUR")).toBe("€0");
   });
 });
