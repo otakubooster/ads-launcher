@@ -109,5 +109,13 @@ everything created paused. Screens checked in light and dark against the spec.
   protocol (local), polls until ready and keeps the preferred thumbnail (video ads need it).
 - Client components import browser-safe code from `@fahd/shared/creatives`, never the
   package root (it exports node:crypto token encryption).
+- Presets: naming_template_id is the campaign template; adset_/ad_naming_template_id the
+  other levels. Naming engine: @fahd/shared/naming (renderName collapses separators
+  around empty tokens, caps at 400 chars). testPreset() in core checks each ID and the
+  token's permissions; cloneAdsetTemplate() reads a live ad set from Meta.
+- Shared choice lists (Advantage+ creative features, CTAs, conversion events, copy limits,
+  default UTMs) live in @fahd/shared/meta-options.
+- Zod: optional ids from forms use z.union([z.uuid(), z.literal("")]).optional() so a
+  missing field and an empty one both mean null.
 - DB tests run on PGlite (in-memory Postgres) with supabase-shim.sql; test/helpers.ts
   has asUser / asServiceRole, which always roll back. No database server needed.
