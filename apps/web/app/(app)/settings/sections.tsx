@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState, useTransition } from "react";
-import { Building2, Check, Gauge, Plug, RefreshCw, ShieldCheck, UserPlus, Users, X } from "lucide-react";
+import { Building2, Check, Gauge, OctagonX, Plug, RefreshCw, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Badge, StatusDot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
-import { formatMoney, formatRelativeTime, moneyInputValue } from "@/lib/format";
+import { TimeAgo } from "@/components/ui/time-ago";
+import { formatMoney, moneyInputValue } from "@/lib/format";
 import { accountStatus } from "@/lib/meta-labels";
 import type { ActionResult } from "@/lib/server/action-result";
 import { cn } from "@/lib/utils";
@@ -19,6 +20,7 @@ import {
   inviteMember,
   replaceToken,
   reverifyConnection,
+  setKillSwitchAction,
   syncConnection,
   updateGuardrails,
 } from "./actions";
@@ -26,6 +28,7 @@ import {
 const SECTIONS = [
   { id: "meta", title: "Meta connections" },
   { id: "accounts", title: "Ad accounts" },
+  { id: "kill-switch", title: "Kill switch" },
   { id: "team", title: "Team" },
   { id: "usage", title: "API usage" },
 ];
@@ -193,7 +196,7 @@ function ConnectionRow({ connection: c, required, canManage, canSync }: { connec
           </div>
           <p className="mt-0.5 text-ui text-slate-11">
             <span className="font-mono">{c.businessId}</span> · token ••••{c.tokenLast4} · verified{" "}
-            {c.lastVerifiedAt ? formatRelativeTime(new Date(c.lastVerifiedAt)) : "never"}
+            {c.lastVerifiedAt ? <TimeAgo iso={c.lastVerifiedAt} /> : "never"}
           </p>
           <p className="mt-0.5 text-ui text-slate-11 tabular-nums">
             {c.adAccounts} ad accounts · {c.assets.page ?? 0} pages · {c.assets.instagram ?? 0} Instagram · {c.assets.pixel ?? 0} pixels
@@ -458,7 +461,12 @@ export function UsageSection({ rows }: { rows: UsageRow[] }) {
                 <span className="truncate font-medium">{r.name}</span>
                 <span className="shrink-0 text-slate-11 tabular-nums">
                   {r.pct === null ? "No readings" : `${r.pct.toFixed(1)}%`}
-                  {r.at && ` · ${formatRelativeTime(new Date(r.at))}`}
+                  {r.at && (
+                    <>
+                      {" · "}
+                      <TimeAgo iso={r.at} />
+                    </>
+                  )}
                   {r.tier && ` · ${r.tier.replace(/_/g, " ")}`}
                 </span>
               </div>
@@ -471,6 +479,76 @@ export function UsageSection({ rows }: { rows: UsageRow[] }) {
           ))}
         </ul>
       )}
+    </Section>
+  );
+}
+
+export function KillSwitchSection({ on, since, canFlip }: { on: boolean; since: string | null; canFlip: boolean }) {
+  const [confirm, setConfirm] = useState(false);
+  const [pending, start] = useTransition();
+  const flip = (next: boolean) =>
+    start(async () => {
+      notify(await setKillSwitchAction(next));
+      setConfirm(false);
+    });
+  return (
+    <Section id="kill-switch" title="Kill switch" description="Stops every queue and pending launch at once. Pausing ads keeps working.">
+      <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <OctagonX className={cn("size-5 shrink-0", on ? "text-red-11" : "text-slate-11")} />
+          <p className="text-body">
+            {on ? (
+              <>
+                <span className="font-medium text-red-11">On</span>
+                {since && (
+                  <span className="text-slate-11">
+                    {" "}
+                    since <TimeAgo iso={since} />
+                  </span>
+                )}. Nothing new goes to Meta.
+              </>
+            ) : (
+              <span className="text-slate-11">Off. Syncs, uploads and launches run normally.</span>
+            )}
+          </p>
+        </div>
+        {canFlip ? (
+          on ? (
+            <Button disabled={pending} onClick={() => flip(false)}>
+              Turn off
+            </Button>
+          ) : (
+            <Button variant="destructive" disabled={pending} onClick={() => setConfirm(true)}>
+              Stop everything
+            </Button>
+          )
+        ) : (
+          <p className="text-ui text-slate-11">Only owners can flip it.</p>
+        )}
+      </div>
+      <Dialog open={confirm} onOpenChange={setConfirm}>
+        <DialogContent
+          className="max-w-md"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) flip(true);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Stop every queue and launch?</DialogTitle>
+            <DialogDescription>
+              Running launches stop at their next step and keep what they already created, paused. Syncs and uploads wait. Live ads keep delivering; pause them in Ads if spend must stop too.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 px-5 pb-5">
+            <Button variant="ghost" onClick={() => setConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={pending} onClick={() => flip(true)}>
+              Stop everything
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Section>
   );
 }

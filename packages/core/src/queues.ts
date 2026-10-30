@@ -6,7 +6,6 @@ import { Redis } from "ioredis";
  * Meta writes to an account never overlap (docs/spec.md → Rate limits).
  */
 export const SCHEDULER_QUEUE = "scheduler";
-export const KILL_SWITCH_KEY = "fahd:kill-switch";
 
 export const accountQueueName = (adAccountId: string) => `account-${adAccountId}`;
 

@@ -139,3 +139,17 @@ everything created paused. Screens checked in light and dark against the spec.
   run's job still holds the launch id). Activate all = activateLaunch() in core (ads, then
   new ad sets, then a new campaign; change_log per write, also on failure; sets
   structure.activatedAt). Duplicate copies the draft without activateAfter/activatedAt.
+- Guardrails (packages/core/src/guardrails.ts): evaluateGuardrails() is pure (account max
+  blocks everyone; buyer step > GUARDRAIL_MAX_CHANGE_PCT blocks; buyer increase above the
+  approval threshold → approval_requests). Web callers go through lib/server/guard.ts
+  (guardActivate, guardBudget, guardLaunchActivation) before any spend-raising write;
+  pauses and cuts never wait. Approving re-checks the max and runs the change as the
+  approver (change_log carries approvalRequestId and requestedBy).
+- Kill switch: app_settings key "kill_switch" (owner-only RLS). The worker delays every job
+  while it is on; runLaunch checks it between steps (inline runs too). assertNotKilled()
+  guards UI writes that add spend or send to Meta. Shell shows a red banner.
+- Alerts (packages/core/src/alerts.ts): sendAlert() emails owners through Resend once per
+  dedupe_key (alerts table) and never throws. Raised by markConnectionBroken, asset sync
+  (account_status ≠ 1), policy error 368, and a launch that finishes Failed.
+- Throw UserError(title, detail, fix) for copy written for people; runAction shows it as is.
+- Relative times in client components use <TimeAgo> (suppresses server/client drift).

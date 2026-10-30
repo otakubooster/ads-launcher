@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { Keyboard, Moon, Pause, Plus, RefreshCw, ScrollText, Sun } from "lucide-react";
+import { Keyboard, Moon, OctagonX, Pause, Plus, RefreshCw, ScrollText, ShieldCheck, Sun } from "lucide-react";
 import { toast } from "sonner";
 import {
   CommandDialog,
@@ -55,6 +55,14 @@ export function CommandPalette() {
             <CommandItem onSelect={() => run(() => router.push("/launches"))}>
               <ScrollText />
               Open launch log
+            </CommandItem>
+            <CommandItem onSelect={() => run(() => router.push("/approvals"))}>
+              <ShieldCheck />
+              Review approvals
+            </CommandItem>
+            <CommandItem value="kill switch stop everything" onSelect={() => run(() => router.push("/settings#kill-switch"))}>
+              <OctagonX />
+              Kill switch
             </CommandItem>
             <CommandItem
               onSelect={() =>

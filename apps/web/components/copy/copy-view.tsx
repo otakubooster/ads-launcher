@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Field, Input, NativeSelect, Textarea } from "@/components/ui/input";
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { formatRelativeTime } from "@/lib/format";
+import { TimeAgo } from "@/components/ui/time-ago";
 import type { ActionResult } from "@/lib/server/action-result";
 import { cn } from "@/lib/utils";
 import { COPY_LIMITS, CTA_TYPES, label } from "@fahd/shared/meta-options";
@@ -63,7 +63,7 @@ export function CopyView({ sets, brands, canEdit }: { sets: CopySet[]; brands: {
                     {s.primaryTexts.length} · {s.headlines.length} · {s.descriptions.length}
                   </td>
                   <td className="border-b border-slate-6 px-3 text-slate-11">{label(s.ctaType)}</td>
-                  <td className="border-b border-slate-6 px-3 text-slate-11">{formatRelativeTime(new Date(s.updatedAt))}</td>
+                  <td className="border-b border-slate-6 px-3 text-slate-11"><TimeAgo iso={s.updatedAt} /></td>
                   <td className="border-b border-slate-6 px-3 text-right">
                     {canEdit && (
                       <span className="inline-flex gap-1">

@@ -1,5 +1,5 @@
 import "server-only";
-import { adAccounts, apiUsage, brands, metaCampaigns, presets } from "@fahd/db/schema";
+import { adAccounts, apiUsage, appSettings, approvalRequests, brands, metaCampaigns, presets } from "@fahd/db/schema";
 import { eq, gt, max, sql } from "drizzle-orm";
 import type { ScopeAccount } from "@/lib/scope";
 import { asUser } from "./db";
@@ -9,6 +9,8 @@ export type ShellData = {
   lastSyncedAt: string | null;
   /** Highest Meta usage across accounts in the last hour, 0–100, or null with no readings. */
   usagePct: number | null;
+  killSwitchOn: boolean;
+  pendingApprovals: number;
 };
 
 export async function loadShellData(userId: string): Promise<ShellData> {
@@ -34,6 +36,14 @@ export async function loadShellData(userId: string): Promise<ShellData> {
       .select({ pct: sql<number | null>`max(${apiUsage.accUtilPct})::float` })
       .from(apiUsage)
       .where(gt(apiUsage.recordedAt, sql`now() - interval '1 hour'`));
-    return { accounts, lastSyncedAt: synced?.at?.toISOString() ?? null, usagePct: usage?.pct ?? null };
+    const [kill] = await tx.select({ value: appSettings.value }).from(appSettings).where(eq(appSettings.key, "kill_switch"));
+    const pendingApprovals = await tx.$count(approvalRequests, eq(approvalRequests.status, "pending"));
+    return {
+      accounts,
+      lastSyncedAt: synced?.at?.toISOString() ?? null,
+      usagePct: usage?.pct ?? null,
+      killSwitchOn: Boolean((kill?.value as { on?: boolean } | undefined)?.on),
+      pendingApprovals,
+    };
   });
 }

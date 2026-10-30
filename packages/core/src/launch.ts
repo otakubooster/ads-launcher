@@ -3,7 +3,9 @@ import type { AdsetTemplateSpec } from "@fahd/db/schema";
 import { MetaApiError, describeMetaError, setStatus, type BatchRequest, type MetaClient, type Params } from "@fahd/meta";
 import type { CopyBlock, LaunchDraft, LaunchPlan } from "@fahd/shared/launch-plan";
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { ALERTS, sendAlert } from "./alerts";
 import { markConnectionBroken } from "./connections";
+import { killSwitchState } from "./guardrails";
 import { clientForAdAccount } from "./meta-client";
 import type { Storage } from "./storage";
 import type { AnyDb } from "./types";
@@ -171,6 +173,8 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
     ? await db.select().from(adsetTemplates).where(eq(adsetTemplates.id, (draft.destination.adsetTemplateId ?? preset.adsetTemplateId)!))
     : [];
 
+  // The kill switch stops inline runs too, not only the worker's.
+  const shouldStop = opts.shouldStop ?? (async () => (await killSwitchState(db)).on);
   const startedAt = launch.startedAt ?? new Date();
   await db.update(launches).set({ status: "running", startedAt }).where(eq(launches.id, launchId));
   const { client, metaAccountId } = opts.client ? { client: opts.client, metaAccountId: account!.metaId } : await clientForAdAccount(db, account!.id);
@@ -225,6 +229,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
       }
       if (e.kind === "policy" || e.kind === "permission") {
         await fail(item, e);
+        if (e.code === 368) await sendAlert(db, ALERTS.policyBlock(account!.id, account!.name, e.userMessage ?? e.message));
         throw new StopLaunch(e.message);
       }
     }
@@ -238,7 +243,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
     const uploaded = new Map<string, CreativeFile>();
     const uploadErrors = new Map<string, unknown>();
     for (const creativeId of needed) {
-      if (opts.shouldStop && (await opts.shouldStop())) throw new StopLaunch("Kill switch");
+      if (await shouldStop()) throw new StopLaunch("Kill switch");
       try {
         const res = await uploadCreativeToAccount(db, storage, creativeId, account!.id, opts.upload);
         const [row] = await db.select({ ratio: creatives.ratio, kind: creatives.kind }).from(creatives).where(eq(creatives.id, creativeId));
@@ -281,7 +286,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
     // 3. Ad sets.
     for (const adsetItem of items.filter((i) => i.level === "adset")) {
       if (adsetItem.status === "done" || adsetItem.status === "failed") continue;
-      if (opts.shouldStop && (await opts.shouldStop())) throw new StopLaunch("Kill switch");
+      if (await shouldStop()) throw new StopLaunch("Kill switch");
       const campaign = byId.get(adsetItem.parentItemId!)!;
       if (!campaign.metaId) continue;
       const p = adsetItem.payload as AdsetPayload;
@@ -350,7 +355,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
       }
 
       for (let start = 0; start < ready.length; start += 25) {
-        if (opts.shouldStop && (await opts.shouldStop())) throw new StopLaunch("Kill switch");
+        if (await shouldStop()) throw new StopLaunch("Kill switch");
         const slice = ready.slice(start, start + 25);
         // An ambiguous earlier attempt may have created some ads: adopt those by name.
         const todo: typeof slice = [];
@@ -485,10 +490,12 @@ async function finish(db: AnyDb, launchId: string, stopped = false): Promise<Run
   const ads = items.filter((i) => i.level === "ad");
   const adsDone = ads.filter((i) => i.status === "done").length;
   const status = pending > 0 && !stopped ? "running" : adsDone === ads.length && failed === 0 ? "done" : adsDone === 0 ? "failed" : "partial";
-  await db
+  const [launch] = await db
     .update(launches)
     .set({ status, finishedAt: status === "running" ? null : new Date() })
-    .where(eq(launches.id, launchId));
+    .where(eq(launches.id, launchId))
+    .returning({ name: launches.name });
+  if (status === "failed" && !stopped) await sendAlert(db, ALERTS.launchFailed(launchId, launch?.name ?? "launch"));
   return { status: status === "running" ? "partial" : status, created, failed };
 }
 

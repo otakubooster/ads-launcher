@@ -6,6 +6,7 @@ import { Check, CircleAlert, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { changePreset, deleteDraft, saveDraft } from "@/app/(app)/launch/actions";
 import { Button } from "@/components/ui/button";
+import { LocalTime } from "@/components/ui/time-ago";
 import type { UserRole as Role } from "@fahd/db/schema";
 import type { CreativeItem } from "@/lib/server/creatives";
 import type { BuilderData } from "@/lib/server/launch";
@@ -205,7 +206,7 @@ function Summary({
           {data.preset.pixelName} · {data.preset.conversionEvent.toLowerCase().replace(/_/g, " ")}
         </dd>
         <dt className="text-slate-11">Start</dt>
-        <dd>{draft.structure.start === "scheduled" && draft.structure.startTime ? new Date(draft.structure.startTime).toLocaleString() : "Paused"}</dd>
+        <dd>{draft.structure.start === "scheduled" && draft.structure.startTime ? <LocalTime iso={draft.structure.startTime} /> : "Paused"}</dd>
       </dl>
       {errors > 0 ? (
         <p className="flex items-center gap-1.5 text-ui text-red-11">

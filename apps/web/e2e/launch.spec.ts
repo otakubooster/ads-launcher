@@ -6,6 +6,15 @@ test.describe.configure({ mode: "serial" });
 
 /** A Lumen preset on the fake Lumen US account (Canada market, so it never clashes with the presets spec). */
 async function ensurePreset(page: Page) {
+  // Launches are refused until an owner or admin turns them on for the account.
+  await page.goto("/settings");
+  const account = page.locator("li", { hasText: "act_200000000000001" });
+  const launches = account.getByRole("switch", { name: "Launches enabled for Lumen US" });
+  if ((await launches.getAttribute("aria-checked")) !== "true") {
+    await launches.click();
+    await account.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Guardrails saved for Lumen US.")).toBeVisible();
+  }
   await page.goto("/presets");
   if (await page.getByText("CA · en").count()) return;
   await page.getByRole("button", { name: "New preset" }).click();

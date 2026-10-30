@@ -1,9 +1,9 @@
 "use server";
 
 import { activateLaunch, resetFailedItems, runLaunch, storageFromEnv } from "@fahd/core";
-import { launches, presets } from "@fahd/db/schema";
+import { launchItems, launches, presets } from "@fahd/db/schema";
 import type { LaunchDraft } from "@fahd/shared/launch-plan";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -11,6 +11,7 @@ import { z } from "zod";
 import { type ActionResult, runAction } from "@/lib/server/action-result";
 import { requireRole } from "@/lib/server/auth";
 import { asUser, getDb } from "@/lib/server/db";
+import { assertNotKilled, guardLaunchActivation } from "@/lib/server/guard";
 import { getQueues } from "@/lib/server/queue";
 
 const EDITORS = ["owner", "admin", "buyer"] as const;
@@ -36,8 +37,11 @@ export async function retryFailedItems(id: string): Promise<ActionResult> {
     const [launch] = await getDb().select({ status: launches.status }).from(launches).where(eq(launches.id, launchId));
     if (!launch || launch.status === "draft") throw new Error("Launch not found.");
     if (launch.status === "queued" || launch.status === "running") return { ok: false, error: { title: "Still running", detail: "Wait for this launch to finish, then retry what failed." } };
-    const count = await resetFailedItems(getDb(), launchId);
+    await assertNotKilled();
+    // Items a kill switch left pending run again too.
+    const count = (await resetFailedItems(getDb(), launchId)) + (await getDb().$count(launchItems, and(eq(launchItems.launchId, launchId), eq(launchItems.status, "pending"))));
     if (!count) return { ok: true, message: "Nothing failed, so there is nothing to retry." };
+    await getDb().update(launches).set({ status: "queued", finishedAt: null }).where(eq(launches.id, launchId));
     await enqueue(launchId);
     revalidatePath(`/launches/${launchId}`);
     return { ok: true, message: `Retrying ${count} ${count === 1 ? "item" : "items"}.` };
@@ -49,6 +53,9 @@ export async function activateAll(id: string): Promise<ActionResult> {
   return runAction(async () => {
     const session = await requireRole(...EDITORS);
     const launchId = z.uuid().parse(id);
+    await assertNotKilled();
+    const guard = await guardLaunchActivation(session, launchId);
+    if (guard.status === "approval") return { ok: true, message: `Sent for approval. ${guard.detail}` };
     const { activated } = await activateLaunch(getDb(), launchId, { actorId: session.userId, source: "ui" });
     revalidatePath(`/launches/${launchId}`);
     revalidatePath("/ads");

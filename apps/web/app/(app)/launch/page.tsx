@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/empty-state";
 import { NewLaunch } from "@/components/launch/new-launch";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { formatRelativeTime } from "@/lib/format";
+import { TimeAgo } from "@/components/ui/time-ago";
 import { requireSession } from "@/lib/server/auth";
 import { asUser } from "@/lib/server/db";
 
@@ -73,7 +73,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
                       {d.brand} · {d.market}
                     </span>
                     <span className="w-40 text-right text-slate-11">
-                      {d.by} · {formatRelativeTime(d.updatedAt)}
+                      {d.by} · <TimeAgo iso={d.updatedAt.toISOString()} />
                     </span>
                   </Link>
                 </li>

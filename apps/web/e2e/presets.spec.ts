@@ -5,9 +5,12 @@ test("a preset passes Test preset; naming, ad set templates and copy work (week 
   await signIn(page, "Fahd");
   await ensureConnected(page);
   const row = page.locator("li", { hasText: "act_200000000000001" });
-  await row.getByRole("switch", { name: "Launches enabled for Lumen US" }).click();
-  await row.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Guardrails saved for Lumen US.")).toBeVisible();
+  const launches = row.getByRole("switch", { name: "Launches enabled for Lumen US" });
+  if ((await launches.getAttribute("aria-checked")) !== "true") {
+    await launches.click();
+    await row.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Guardrails saved for Lumen US.")).toBeVisible();
+  }
 
   await page.goto("/presets");
   await page.getByRole("button", { name: "New preset" }).click();

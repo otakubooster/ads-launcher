@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
-import { formatRelativeTime } from "@/lib/format";
+import { TimeAgo } from "@/components/ui/time-ago";
 import type { ActionResult } from "@/lib/server/action-result";
 import type { LaunchLog, LogItem } from "@/lib/server/launches";
 import { cn } from "@/lib/utils";
@@ -128,9 +128,20 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
     <>
       <PageHeader
         title={log.name}
-        description={`${log.preset} · started by ${log.by} ${formatRelativeTime(new Date(log.createdAt))} · ${
-          log.activatedAt ? `activated ${formatRelativeTime(new Date(log.activatedAt))}` : log.activateAfter ? "activates when done" : "created paused"
-        }`}
+        description={
+          <>
+            {log.preset} · started by {log.by} <TimeAgo iso={log.createdAt} /> ·{" "}
+            {log.activatedAt ? (
+              <>
+                activated <TimeAgo iso={log.activatedAt} />
+              </>
+            ) : log.activateAfter ? (
+              "activates when done"
+            ) : (
+              "created paused"
+            )}
+          </>
+        }
         actions={
           <>
             <Badge tone={pill.tone} data-testid="launch-status">
@@ -260,7 +271,9 @@ export function LaunchList({ rows }: { rows: import("@/lib/server/launches").Lau
                 </td>
                 <td className="truncate px-3 text-slate-11">{r.preset}</td>
                 <td className="truncate px-3 text-slate-11">{r.by}</td>
-                <td className="px-3 text-slate-11">{formatRelativeTime(new Date(r.createdAt))}</td>
+                <td className="px-3 text-slate-11">
+                  <TimeAgo iso={r.createdAt} />
+                </td>
                 <td className="px-3">
                   <Badge tone={pill.tone}>{pill.label}</Badge>
                 </td>

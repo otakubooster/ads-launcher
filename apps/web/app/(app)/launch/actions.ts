@@ -1,16 +1,17 @@
 "use server";
 
-import { createLaunchItems, runLaunch, storageFromEnv } from "@fahd/core";
-import { launches, presets } from "@fahd/db/schema";
+import { checkSpend, createLaunchItems, runLaunch, storageFromEnv } from "@fahd/core";
+import { adAccounts, launches, presets } from "@fahd/db/schema";
 import { buildPlan, planHasErrors, type LaunchDraft } from "@fahd/shared/launch-plan";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { z } from "zod";
-import { type ActionResult, runAction } from "@/lib/server/action-result";
+import { type ActionResult, UserError, runAction } from "@/lib/server/action-result";
 import { requireRole } from "@/lib/server/auth";
 import { asUser, getDb } from "@/lib/server/db";
+import { GuardrailError, assertNotKilled } from "@/lib/server/guard";
 import { draftFromPreset, planContext } from "@/lib/server/launch";
 import { getQueues } from "@/lib/server/queue";
 
@@ -65,14 +66,27 @@ export async function submitLaunch(id: string, { activate = false }: { activate?
     const session = await requireRole(...EDITORS);
     if (activate && session.role === "buyer") return { ok: false, error: { title: "Not allowed", detail: "Only owners and admins can create and activate in one step. Create it paused." } };
     const launchId = z.uuid().parse(id);
+    await assertNotKilled();
     const plan = await asUser(session.userId, async (tx) => {
       const [launch] = await tx.select().from(launches).where(eq(launches.id, launchId));
       if (!launch || launch.status !== "draft") throw new Error("This launch was already submitted.");
       const draft = { ...(launch.structure as LaunchDraft), activateAfter: activate };
-      const [preset] = await tx.select({ adAccountId: presets.adAccountId }).from(presets).where(eq(presets.id, launch.presetId));
+      const [preset] = await tx
+        .select({ adAccountId: presets.adAccountId, launchEnabled: adAccounts.launchEnabled, accountName: adAccounts.name })
+        .from(presets)
+        .innerJoin(adAccounts, eq(adAccounts.id, presets.adAccountId))
+        .where(eq(presets.id, launch.presetId));
       if (!preset) throw new Error("Preset not found");
+      if (!preset.launchEnabled) {
+        throw new UserError("Launches are off for this ad account", `${preset.accountName} doesn't accept launches yet.`, "An owner or admin can turn on Launches enabled in Settings → Ad accounts.");
+      }
       const p = buildPlan(draft, await planContext(tx, launch.presetId, draft));
       if (planHasErrors(p)) return { error: p };
+      // Create & activate releases the plan's budget at once: the account maximum applies.
+      if (activate) {
+        const decision = await checkSpend(getDb(), { adAccountId: preset.adAccountId, role: session.role, increase: p.totals.dailyBudget });
+        if (decision.decision !== "allow") throw new GuardrailError(decision);
+      }
       await createLaunchItems(tx, launchId, p);
       await tx.update(launches).set({ status: "queued", structure: draft }).where(eq(launches.id, launchId));
       return { adAccountId: preset.adAccountId };

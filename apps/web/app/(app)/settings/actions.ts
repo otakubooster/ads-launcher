@@ -1,7 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { checkToken, syncConnectionAssets, verifyConnection } from "@fahd/core";
+import { checkToken, setKillSwitch, syncConnectionAssets, verifyConnection } from "@fahd/core";
 import { adAccounts, changeLog, metaConnections, users } from "@fahd/db/schema";
 import { encryptToken } from "@fahd/shared";
 import { eq, sql } from "drizzle-orm";
@@ -186,5 +186,22 @@ export async function changeRole(userId: string, role: string): Promise<ActionRe
     if (!updated.length) return { ok: false, error: { title: "Not allowed", detail: "Admins can't create owners or change an owner's role." } };
     revalidatePath("/settings");
     return { ok: true, message: "Role updated." };
+  });
+}
+
+/**
+ * Kill switch (owner only): the worker delays every job and running launches stop at
+ * their next step; inline runs check the same flag. Pauses still go through.
+ */
+export async function setKillSwitchAction(on: boolean): Promise<ActionResult> {
+  return runAction(async () => {
+    const session = await requireRole("owner");
+    const value = z.boolean().parse(on);
+    await asUser(session.userId, async (tx) => {
+      await setKillSwitch(tx, value, session.userId);
+      await tx.insert(changeLog).values({ actorId: session.userId, source: "ui", entityLevel: "user", entityId: session.userId, action: value ? "kill_switch_on" : "kill_switch_off", after: { on: value } });
+    });
+    revalidatePath("/", "layout");
+    return { ok: true, message: value ? "Kill switch on. Queues and launches are stopped." : "Kill switch off. Queues resume." };
   });
 }

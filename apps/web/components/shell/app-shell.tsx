@@ -1,6 +1,8 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
+import { OctagonX } from "lucide-react";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { CommandPalette } from "./command-palette";
 import { ShortcutsDialog, useGlobalShortcuts } from "./keyboard-shortcuts";
@@ -26,6 +28,7 @@ function ShellLayout({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <main id="main" className="flex-1 overflow-y-auto px-4 py-6 md:px-6">
+          <KillSwitchBanner />
           <StaleBanner />
           {children}
         </main>
@@ -33,6 +36,23 @@ function ShellLayout({ children }: { children: React.ReactNode }) {
       <CommandPalette />
       <ShortcutsDialog />
     </div>
+  );
+}
+
+/** Every page says so while the kill switch is on (docs/spec.md → Spend guardrails). */
+function KillSwitchBanner() {
+  const { killSwitchOn, user } = useShell();
+  if (!killSwitchOn) return null;
+  return (
+    <p role="alert" className="mb-4 flex items-center gap-2 rounded-control border border-red-7 bg-red-3 px-3 py-2 text-ui font-medium text-red-11">
+      <OctagonX className="size-4 shrink-0" />
+      <span className="flex-1">Kill switch is on: queues and launches are stopped, and nothing new goes to Meta.</span>
+      {user.role === "owner" && (
+        <Link href="/settings#kill-switch" className="underline underline-offset-2">
+          Turn off in Settings
+        </Link>
+      )}
+    </p>
   );
 }
 
