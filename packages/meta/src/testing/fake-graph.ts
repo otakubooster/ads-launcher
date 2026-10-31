@@ -9,6 +9,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
  * Any Bearer token starting with "EAAFAKE" is valid. Control endpoints:
  *   POST /__fake/fail   {"match": "regex on METHOD path", "status": 400, "error": {...}, "times": 1}
  *   POST /__fake/reset  restore the initial state
+ *   POST /__fake/refuse-feature  {"key": "music"}  refuse that Advantage+ creative feature key, like Meta
  *   GET  /__fake/state  everything the fake holds
  */
 
@@ -82,7 +83,7 @@ function initialState() {
       }
     }
   });
-  return { objects, seq, failures: [] as Failure[], videoPolls: new Map<string, number>() };
+  return { objects, seq, failures: [] as Failure[], videoPolls: new Map<string, number>(), refusedFeatures: new Set<string>() };
 }
 
 function thumb(seed: string) {
@@ -231,6 +232,10 @@ export function createFakeGraph() {
         return [200, { id: obj.id }];
       }
       if (method === "POST" && edge === "adcreatives") {
+        // Like Meta: a feature key it doesn't know is refused (keys are set with POST /__fake/refuse-feature).
+        const features = (json("degrees_of_freedom_spec") as { creative_features_spec?: Record<string, unknown> } | null)?.creative_features_spec ?? {};
+        const refused = Object.keys(features).find((k) => state.refusedFeatures.has(k));
+        if (refused) return [400, graphError(100, `(#100) Param key '${refused}' in degrees_of_freedom_spec[creative_features_spec] must be one of {IG_VIDEO_NATIVE_SUBTITLE, IMAGE_ANIMATION} - got "${refused}".`)];
         const obj: Obj = { id: nextId(), type: "adcreative", account_id: head, thumbnail_url: thumb(params.name ?? "creative") };
         for (const [k, v] of Object.entries(params)) obj[k] = json(k) ?? v;
         state.objects.set(obj.id, obj);
@@ -386,6 +391,10 @@ export function createFakeGraph() {
       if (url.pathname === "/__fake/reset") {
         state = initialState();
         reports.clear();
+        return send(200, { ok: true });
+      }
+      if (url.pathname === "/__fake/refuse-feature") {
+        state.refusedFeatures.add(String((body as { key?: string }).key));
         return send(200, { ok: true });
       }
       if (url.pathname === "/__fake/fail") {

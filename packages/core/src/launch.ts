@@ -1,6 +1,7 @@
 import { adAccounts, adsetTemplates, changeLog, creativeUploads, creatives, launchItems, launches, metaAds, metaAdsets, metaCampaigns, presets } from "@fahd/db/schema";
 import type { AdsetTemplateSpec } from "@fahd/db/schema";
 import { MetaApiError, describeMetaError, setStatus, type BatchRequest, type MetaClient, type Params } from "@fahd/meta";
+import { CREATIVE_FEATURES } from "@fahd/shared/meta-options";
 import type { AdCreativeSettings, AdsetSettings, CampaignSettings, CopyBlock, LaunchDraft, LaunchPlan, Placement } from "@fahd/shared/launch-plan";
 import { and, asc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { ALERTS, sendAlert } from "./alerts";
@@ -77,6 +78,12 @@ const LABELS: Record<string, string> = { "9:16": "r916", "4:5": "r45", "1:1": "r
  * use asset_feed_spec with labelled media and at least two asset_customization_rules
  * (9:16 → Stories/Reels, 4:5 or 1:1 → Feed); a Post ID reuses object_story_id.
  */
+/** The feature key in Meta's "Param key 'music' in degrees_of_freedom_spec[creative_features_spec] must be one of …". */
+export function rejectedFeatureKey(error: unknown): string | null {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /Param key '([^']+)' in degrees_of_freedom_spec/i.exec(message)?.[1] ?? null;
+}
+
 export function buildCreativeParams(input: {
   name: string;
   pageId: string;
@@ -94,7 +101,13 @@ export function buildCreativeParams(input: {
   // Image-only features on a video creative (and video-only on an image) are refused by Meta.
   const isVideo = input.files.some((f) => f.kind === "video");
   const applies = (k: string) => (isVideo ? !k.startsWith("image_") : !k.startsWith("video_"));
-  const featureSpec = Object.fromEntries(Object.entries(input.features).filter(([k]) => input.postId || applies(k)).map(([k, v]) => [k, { enroll_status: v }]));
+  // Only features the app still offers (older presets may carry removed ones, like "music").
+  const offered = new Set<string>(CREATIVE_FEATURES.map((f) => f.key));
+  const featureSpec = Object.fromEntries(
+    Object.entries(input.features)
+      .filter(([k]) => offered.has(k) && (input.postId || applies(k)))
+      .map(([k, v]) => [k, { enroll_status: v }]),
+  );
   if (Object.keys(featureSpec).length) params.degrees_of_freedom_spec = { creative_features_spec: featureSpec };
 
   if (input.postId) {
@@ -474,6 +487,11 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
       }
     }
 
+    // Advantage+ feature keys Meta refused in this run (its list changes between API
+    // versions): they're dropped and the creative is sent again without them.
+    const rejectedFeatures = new Set<string>();
+    const withoutRejected = (f: Record<string, "OPT_IN" | "OPT_OUT">) => Object.fromEntries(Object.entries(f).filter(([k]) => !rejectedFeatures.has(k)));
+
     // 4. Creatives and ads, batched per ad set: [creative, ad] pairs chained by name.
     items = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId)).orderBy(asc(launchItems.createdAt));
     for (const i of items) byId.set(i.id, i);
@@ -498,7 +516,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
         await checkpoint();
         const slice = ready.slice(start, start + 25);
         // An ambiguous earlier attempt may have created some ads: adopt those by name.
-        const todo: typeof slice = [];
+        let todo: typeof slice = [];
         for (const pair of slice) {
           const name = (pair.ad.payload as AdPayload).name;
           const existing = pair.ad.attempts > 0 ? await findByName(`${adsetItem.metaId}/ads`, name) : null;
@@ -507,67 +525,81 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
         }
         if (todo.length === 0) continue;
 
-        const requests: BatchRequest[] = [];
-        for (const [i, { creative, ad }] of todo.entries()) {
-          const payload = creative.payload as CreativePayload;
-          const files = payload.creativeIds.map((id) => uploaded.get(id)).filter((f): f is CreativeFile => Boolean(f));
-          if (creative.status === "done" && creative.metaId) {
-            requests.push({ method: "GET", relativeUrl: creative.metaId, params: { fields: "id" }, name: `c${i}` });
-          } else {
+        // Rounds: a refused feature key is dropped and only those pairs go again.
+        for (let round = 0; todo.length && round < 12; round++) {
+          const retry: typeof todo = [];
+          const droppedNow = new Set<string>();
+          const requests: BatchRequest[] = [];
+          for (const [i, { creative, ad }] of todo.entries()) {
+            const payload = creative.payload as CreativePayload;
+            const files = payload.creativeIds.map((id) => uploaded.get(id)).filter((f): f is CreativeFile => Boolean(f));
+            if (creative.status === "done" && creative.metaId) {
+              requests.push({ method: "GET", relativeUrl: creative.metaId, params: { fields: "id" }, name: `c${i}` });
+            } else {
+              requests.push({
+                method: "POST",
+                relativeUrl: `${metaAccountId}/adcreatives`,
+                name: `c${i}`,
+                params: buildCreativeParams({
+                  name: payload.name,
+                  pageId: payload.creative?.pageId ?? preset.pageId,
+                  instagramUserId: payload.creative ? (payload.creative.instagramUserId ?? null) : preset.instagramUserId,
+                  files,
+                  copy: payload.copy,
+                  urlTags: payload.creative ? (payload.creative.urlTags ?? null) : preset.urlTags,
+                  features: withoutRejected(payload.creative?.features ?? draft.structure.features),
+                  postId: payload.postId,
+                  displayLink: payload.creative?.displayLink,
+                }),
+              });
+            }
             requests.push({
               method: "POST",
-              relativeUrl: `${metaAccountId}/adcreatives`,
-              name: `c${i}`,
-              params: buildCreativeParams({
-                name: payload.name,
-                pageId: payload.creative?.pageId ?? preset.pageId,
-                instagramUserId: payload.creative ? (payload.creative.instagramUserId ?? null) : preset.instagramUserId,
-                files,
-                copy: payload.copy,
-                urlTags: payload.creative ? (payload.creative.urlTags ?? null) : preset.urlTags,
-                features: payload.creative?.features ?? draft.structure.features,
-                postId: payload.postId,
-                displayLink: payload.creative?.displayLink,
-              }),
+              relativeUrl: `${metaAccountId}/ads`,
+              params: { name: (ad.payload as AdPayload).name, adset_id: adsetItem.metaId, creative: { creative_id: `{result=c${i}:$.id}` }, status: "PAUSED" },
             });
           }
-          requests.push({
-            method: "POST",
-            relativeUrl: `${metaAccountId}/ads`,
-            params: { name: (ad.payload as AdPayload).name, adset_id: adsetItem.metaId, creative: { creative_id: `{result=c${i}:$.id}` }, status: "PAUSED" },
-          });
-        }
 
-        let results;
-        try {
-          results = await client.batch<{ id: string }>(requests, meta);
-        } catch (e) {
-          for (const { ad } of todo) await save(ad, { attempts: ad.attempts + 1 });
-          throw e;
-        }
-        for (const [i, { creative, ad }] of todo.entries()) {
-          const c = results[i * 2]!;
-          const a = results[i * 2 + 1]!;
-          if (c.ok) {
-            if (creative.status !== "done") {
-              await save(creative, { status: "done", metaId: c.body.id, attempts: creative.attempts + 1, errorMessage: null });
-              await logCreate("creative", c.body.id, (creative.payload as CreativePayload).name, c.body);
-            }
-          } else {
-            await fail(creative, c.error);
+          let results;
+          try {
+            results = await client.batch<{ id: string }>(requests, meta);
+          } catch (e) {
+            for (const { ad } of todo) await save(ad, { attempts: ad.attempts + 1 });
+            throw e;
           }
-          if (a.ok) {
-            await save(ad, { status: "done", metaId: a.body.id, attempts: ad.attempts + 1, errorMessage: null });
-            await logCreate("ad", a.body.id, (ad.payload as AdPayload).name, a.body);
-          } else if (c.ok) {
-            if (a.error.kind === "policy" || a.error.kind === "permission") {
+          for (const [i, { creative, ad }] of todo.entries()) {
+            const c = results[i * 2]!;
+            const a = results[i * 2 + 1]!;
+            if (c.ok) {
+              if (creative.status !== "done") {
+                await save(creative, { status: "done", metaId: c.body.id, attempts: creative.attempts + 1, errorMessage: null });
+                await logCreate("creative", c.body.id, (creative.payload as CreativePayload).name, c.body);
+              }
+            } else {
+              const key = rejectedFeatureKey(c.error);
+              // A newly refused feature (and not the last round): drop it and send this pair again.
+              if (key && (!rejectedFeatures.has(key) || droppedNow.has(key)) && round < 11) {
+                rejectedFeatures.add(key);
+                droppedNow.add(key);
+                retry.push({ creative, ad });
+                continue;
+              }
+              await fail(creative, c.error);
+            }
+            if (a.ok) {
+              await save(ad, { status: "done", metaId: a.body.id, attempts: ad.attempts + 1, errorMessage: null });
+              await logCreate("ad", a.body.id, (ad.payload as AdPayload).name, a.body);
+            } else if (c.ok) {
+              if (a.error.kind === "policy" || a.error.kind === "permission") {
+                await fail(ad, a.error);
+                throw new StopLaunch(a.error.message);
+              }
               await fail(ad, a.error);
-              throw new StopLaunch(a.error.message);
+            } else {
+              await save(ad, { status: "failed", attempts: ad.attempts + 1, errorMessage: "Skipped: its creative wasn't created." });
             }
-            await fail(ad, a.error);
-          } else {
-            await save(ad, { status: "failed", attempts: ad.attempts + 1, errorMessage: "Skipped: its creative wasn't created." });
           }
+          todo = retry;
         }
       }
     }

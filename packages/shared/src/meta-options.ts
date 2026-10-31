@@ -3,7 +3,7 @@
 /**
  * Advantage+ creative features set one by one in
  * degrees_of_freedom_spec.creative_features_spec (the old standard_enhancements
- * bundle is gone since v22.0).
+ * bundle is gone since v22.0). "music" was removed: Meta refuses it as a key.
  */
 export const CREATIVE_FEATURES = [
   { key: "image_touchups", label: "Visual touch-ups", hint: "Automatic cropping and filters" },
@@ -15,7 +15,6 @@ export const CREATIVE_FEATURES = [
   { key: "adapt_to_placement", label: "Adapt to placement" },
   { key: "inline_comment", label: "Show relevant comments" },
   { key: "description_automation", label: "Dynamic description" },
-  { key: "music", label: "Add music" },
 ] as const;
 export type CreativeFeatureKey = (typeof CREATIVE_FEATURES)[number]["key"];
 

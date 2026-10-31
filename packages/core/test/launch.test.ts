@@ -120,6 +120,20 @@ describe("runLaunch", () => {
     expect(creative.object_story_spec).toEqual({ page_id: "300000000000001", instagram_user_id: "400000000000001" });
   });
 
+  it("drops an Advantage+ feature Meta refuses and still creates every ad", async () => {
+    await fetch(`${process.env.META_GRAPH_HOST}/__fake/refuse-feature`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "enhance_cta" }) });
+    const before = objects("adcreative").length;
+    const d = draft();
+    // "music" was removed from the app's list: an old preset that still has it never sends it.
+    d.structure = { ...d.structure, features: { enhance_cta: "OPT_IN", text_optimizations: "OPT_OUT", music: "OPT_IN" } as LaunchDraft["structure"]["features"] };
+    const { launchId } = await newLaunch(d);
+    const result = await runLaunch(db, storageFromEnv(), launchId, fast);
+    expect(result).toMatchObject({ status: "done", failed: 0 });
+    const made = objects("adcreative").slice(before);
+    expect(made).toHaveLength(20);
+    expect(made.every((c) => JSON.stringify(c.degrees_of_freedom_spec) === JSON.stringify({ creative_features_spec: { text_optimizations: { enroll_status: "OPT_OUT" } } }))).toBe(true);
+  });
+
   it("finishes partial when an ad set fails, then retries only the failed items without duplicating", async () => {
     const { launchId, plan } = await newLaunch(draft());
     const secondAdset = plan.adsets[1]!.name;
