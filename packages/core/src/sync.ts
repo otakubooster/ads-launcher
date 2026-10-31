@@ -186,6 +186,27 @@ export async function syncAccountObjects(db: AnyDb, adAccountId: string, client?
   return { campaigns: campaignIds.size, adsets: adsetIds.size, ads: adRows.length, removed };
 }
 
+/**
+ * Meta reports one event under several names depending on the account and source
+ * (pixel, app, offline, "omni" totals). Ads Manager shows the largest, so read all.
+ */
+const ACTION_ALIASES: Record<string, string[]> = {
+  purchase: ["purchase", "omni_purchase", "offsite_conversion.fb_pixel_purchase", "onsite_web_purchase"],
+  add_to_cart: ["add_to_cart", "omni_add_to_cart", "offsite_conversion.fb_pixel_add_to_cart", "onsite_web_add_to_cart"],
+  initiate_checkout: ["initiate_checkout", "omni_initiated_checkout", "offsite_conversion.fb_pixel_initiate_checkout", "onsite_web_initiate_checkout"],
+  add_payment_info: ["add_payment_info", "omni_add_payment_info", "offsite_conversion.fb_pixel_add_payment_info"],
+  complete_registration: ["complete_registration", "omni_complete_registration", "offsite_conversion.fb_pixel_complete_registration"],
+  view_content: ["view_content", "omni_view_content", "offsite_conversion.fb_pixel_view_content"],
+  search: ["search", "omni_search", "offsite_conversion.fb_pixel_search"],
+  lead: ["lead", "offsite_conversion.fb_pixel_lead"],
+  add_to_wishlist: ["add_to_wishlist", "omni_add_to_wishlist", "offsite_conversion.fb_pixel_add_to_wishlist"],
+};
+
+/** The event's count (or value) under whichever name Meta used. */
+function eventValue(list: Action[] | undefined, type: string) {
+  return Math.max(0, ...(ACTION_ALIASES[type] ?? [type]).map((t) => actionValue(list, t)));
+}
+
 function actionValue(list: Action[] | undefined, type: string) {
   const v = list?.find((a) => a.action_type === type)?.value;
   return v ? Number(v) : 0;
@@ -215,12 +236,12 @@ export function mapInsights(rows: GraphInsight[], adIds: Map<string, string>, cu
       spend: toMinor(r.spend, digits),
       impressions: Number(r.impressions ?? 0),
       clicks: Number(r.inline_link_clicks ?? 0),
-      purchases: Math.round(actionValue(r.actions, "purchase")),
-      purchaseValue: toMinor(r.action_values?.find((a) => a.action_type === "purchase")?.value, digits),
+      purchases: Math.round(eventValue(r.actions, "purchase")),
+      purchaseValue: toMinor(String(eventValue(r.action_values, "purchase")), digits),
       video3sPlays: actionValue(r.actions, "video_view"),
       thruplays: actionValue(r.video_thruplay_watched_actions, "video_view"),
-      addToCart: Math.round(actionValue(r.actions, "add_to_cart")),
-      checkouts: Math.round(actionValue(r.actions, "initiate_checkout")),
+      addToCart: Math.round(eventValue(r.actions, "add_to_cart")),
+      checkouts: Math.round(eventValue(r.actions, "initiate_checkout")),
       results: Math.round(resultCount(r, resultActions.get(r.ad_id) ?? "purchase")),
       actions: Object.fromEntries((r.actions ?? []).map((a) => [a.action_type, Number(a.value)])),
     }));
@@ -229,7 +250,7 @@ export function mapInsights(rows: GraphInsight[], adIds: Map<string, string>, cu
 function resultCount(r: GraphInsight, action: string) {
   if (action === "link_click") return Number(r.inline_link_clicks ?? actionValue(r.actions, "link_click"));
   if (action === "video_thruplay") return actionValue(r.video_thruplay_watched_actions, "video_view");
-  return actionValue(r.actions, action);
+  return eventValue(r.actions, action);
 }
 
 async function storeInsights(db: AnyDb, adAccountId: string, rows: GraphInsight[]) {

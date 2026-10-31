@@ -60,8 +60,25 @@ describe("backfill", () => {
     const result = await scheduledSync(db, "backfill", 30);
     expect(result).toMatchObject({ accounts: 3, failed: [], days: 30 });
     const [row] = await db.select({ days: sql<number>`count(distinct ${insightsDaily.date})::int`, carts: sql<number>`sum(${insightsDaily.addToCart})::int`, results: sql<number>`sum(${insightsDaily.results})::int` }).from(insightsDaily);
-    expect(row!.days).toBe(30);
+    // Accounts sit in different time zones, so "today" can differ by a day between them.
+    expect(row!.days).toBeGreaterThanOrEqual(30);
     expect(row!.carts).toBeGreaterThan(0);
     expect(row!.results).toBeGreaterThan(0);
+  });
+});
+
+describe("self-repair", () => {
+  it("re-pulls days stored before the newer metrics, one window per run", async () => {
+    const { insightsDaily } = await import("@fahd/db/schema");
+    const { sql } = await import("drizzle-orm");
+    // Pretend the last 30 days came from the old sync: no actions, no carts, no results.
+    await db.update(insightsDaily).set({ actions: {}, addToCart: 0, results: 0 });
+    const stale = async () => (await db.select({ n: sql<number>`count(*)::int` }).from(insightsDaily).where(sql`${insightsDaily.actions} = '{}'::jsonb and ${insightsDaily.spend} > 0`))[0]!.n;
+    const before = await stale();
+    await scheduledSync(db, "quick");
+    const after = await stale();
+    expect(after).toBeLessThan(before);
+    for (let i = 0; i < 3; i++) await scheduledSync(db, "quick");
+    expect(await stale()).toBe(0);
   });
 });

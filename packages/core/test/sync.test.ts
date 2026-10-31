@@ -77,6 +77,27 @@ describe("insights", () => {
 });
 
 describe("mapInsights", () => {
+  it("reads events under whichever name Meta used (omni, pixel)", () => {
+    const [row] = mapInsights(
+      [
+        {
+          ad_id: "9",
+          date_start: "2026-10-30",
+          spend: "50.00",
+          actions: [
+            { action_type: "omni_purchase", value: "3" },
+            { action_type: "omni_add_to_cart", value: "12" },
+            { action_type: "offsite_conversion.fb_pixel_initiate_checkout", value: "7" },
+          ],
+          action_values: [{ action_type: "omni_purchase", value: "180.00" }],
+        },
+      ],
+      new Map([["9", "ad-uuid"]]),
+      "USD",
+    );
+    expect(row).toMatchObject({ purchases: 3, purchaseValue: 18000, addToCart: 12, checkouts: 7, results: 3 });
+  });
+
   it("follows the spec's metric definitions", () => {
     const [row] = mapInsights(
       [

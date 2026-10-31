@@ -1,6 +1,6 @@
-import { metaConnections } from "@fahd/db/schema";
+import { insightsDaily, metaAds, metaConnections } from "@fahd/db/schema";
 import { MetaApiError } from "@fahd/meta";
-import { ne } from "drizzle-orm";
+import { and, eq, gt, gte, max, ne, sql } from "drizzle-orm";
 import { markConnectionBroken, syncConnectionAssets } from "./connections";
 import { addDays, todayIn } from "./dates";
 import { killSwitchState } from "./guardrails";
@@ -8,6 +8,16 @@ import { syncAccountObjects, syncInsights, syncableAccounts } from "./sync";
 import type { AnyDb } from "./types";
 
 export type ScheduledSyncResult = { skipped?: string; accounts: number; failed: { adAccountId: string; error: string }[]; assets?: number; days?: number };
+
+/** The newest day (within the window) whose rows predate the `actions` column. */
+async function latestStaleDay(db: AnyDb, adAccountId: string, since: string) {
+  const [row] = await db
+    .select({ day: max(insightsDaily.date) })
+    .from(insightsDaily)
+    .innerJoin(metaAds, eq(metaAds.id, insightsDaily.adId))
+    .where(and(eq(metaAds.adAccountId, adAccountId), gte(insightsDaily.date, since), gt(insightsDaily.spend, 0), sql`${insightsDaily.actions} = '{}'::jsonb`));
+  return row?.day ?? null;
+}
 
 /**
  * The worker's schedule for hosts without one (Vercel): an external cron calls this
@@ -44,6 +54,9 @@ export async function scheduledSync(db: AnyDb, mode: "quick" | "daily" | "backfi
         result.days = backfillDays;
       } else {
         await syncInsights(db, a.id, { since: addDays(today, mode === "daily" ? -7 : -1), until: today });
+        // Days stored before newer metrics existed get re-pulled, one window per run.
+        const stale = await latestStaleDay(db, a.id, addDays(today, -90));
+        if (stale) await syncInsights(db, a.id, { since: addDays(stale, -9), until: stale });
       }
       result.accounts++;
     } catch (e) {
