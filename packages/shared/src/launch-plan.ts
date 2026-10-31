@@ -84,6 +84,7 @@ export type PlanIssue = { level: "error" | "warning"; message: string };
 
 export type PlannedAd = {
   key: string;
+  creative?: AdCreativeSettings;
   name: string;
   group: DraftCreativeGroup;
   copy: CopyBlock;
@@ -94,6 +95,7 @@ export type PlannedAd = {
 
 export type PlannedAdset = {
   key: string;
+  settings?: AdsetSettings;
   name: string;
   /** "new" (from the template), "clone" (copy of a live ad set) or "existing". */
   source: "new" | "clone" | "existing";
@@ -103,8 +105,54 @@ export type PlannedAdset = {
   issues: PlanIssue[];
 };
 
+/** Campaign settings from the Ads Manager-style editor (absent for bulk launches). */
+export type CampaignSettings = {
+  /** Advantage+ campaign budget: the budget lives on the campaign. */
+  campaignBudget: boolean;
+  budgetType: "daily" | "lifetime";
+  /** Minor units; used when campaignBudget is on. */
+  budget: number;
+  bidStrategy: BidStrategy;
+  startTime?: string | null;
+  /** Required by Meta for lifetime budgets. */
+  endTime?: string | null;
+};
+
+export type BidStrategy = "LOWEST_COST_WITHOUT_CAP" | "COST_CAP" | "LOWEST_COST_WITH_BID_CAP" | "LOWEST_COST_WITH_MIN_ROAS";
+
+export type Placement = "facebook_feed" | "facebook_reels" | "facebook_stories" | "instagram_feed" | "instagram_reels" | "instagram_stories" | "instagram_explore" | "audience_network" | "messenger";
+
+/** Ad set settings from the editor. */
+export type AdsetSettings = {
+  performanceGoal: "OFFSITE_CONVERSIONS" | "VALUE";
+  pixelId: string;
+  event: string;
+  /** Minor units: cost per result goal (cost cap), bid cap, or ROAS goal × 10,000. */
+  bidAmount?: number | null;
+  budgetType: "daily" | "lifetime";
+  /** Minor units; used when the campaign budget is off. */
+  budget: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  countries: string[];
+  ageMin: number;
+  ageMax: number;
+  gender: "all" | "male" | "female";
+  placements: "advantage" | Placement[];
+  attribution: "7d_click_1d_view" | "7d_click" | "1d_click" | "1d_click_1d_view";
+};
+
+/** Per-ad identity and tracking from the editor. */
+export type AdCreativeSettings = {
+  pageId: string;
+  instagramUserId?: string | null;
+  urlTags?: string | null;
+  displayLink?: string | null;
+  features: Record<string, "OPT_IN" | "OPT_OUT">;
+};
+
 export type LaunchPlan = {
-  campaign: { source: "new" | "existing"; name: string; metaId?: string; dailyBudget: number | null };
+  campaign: { source: "new" | "existing"; name: string; metaId?: string; dailyBudget: number | null; settings?: CampaignSettings };
   adsets: PlannedAdset[];
   totals: { ads: number; adsets: number; dailyBudget: number };
   issues: PlanIssue[];

@@ -36,7 +36,7 @@ test("the builder autosaves, reviews and creates everything paused (week 3 check
 
   await page.goto("/launch");
   await page.getByLabel("Preset", { exact: true }).selectOption({ label: "Lumen · CA · en" });
-  await page.getByRole("button", { name: "Start launch" }).click();
+  await page.getByRole("button", { name: "Bulk launch" }).click();
   await page.waitForURL(/\/launch\/[0-9a-f-]{36}$/);
   const draftUrl = page.url();
 
@@ -109,7 +109,7 @@ test("the launch log shows Meta's error and fix, retries only failed items, acti
   await signIn(page, "Fahd");
   await page.goto("/launch");
   await page.getByLabel("Preset", { exact: true }).selectOption({ label: "Lumen · CA · en" });
-  await page.getByRole("button", { name: "Start launch" }).click();
+  await page.getByRole("button", { name: "Bulk launch" }).click();
   await page.waitForURL(/\/launch\/[0-9a-f-]{36}$/);
   await page.getByLabel("Launch name").fill("E2E retry test");
   await page.getByLabel("Daily budget").fill("30");
@@ -167,4 +167,63 @@ test("the launch log shows Meta's error and fix, retries only failed items, acti
   await page.goto("/launches");
   await expect(page.getByRole("row", { name: /E2E retry test/ })).toContainText("Done");
   await expect(page.getByRole("row", { name: /E2E glow test/ })).toContainText("Done");
+});
+
+test("the Ads Manager-style editor creates a campaign with ad sets and ads, duplicates and publishes paused", async ({ page }) => {
+  test.setTimeout(180_000);
+  await signIn(page, "Fahd");
+  await page.goto("/launch");
+  await page.getByLabel("Preset", { exact: true }).selectOption({ label: "Lumen · CA · en" });
+  await page.getByRole("button", { name: "Create campaign" }).click();
+  await page.waitForURL(/\/create\/[0-9a-f-]{36}$/);
+  const editorUrl = page.url();
+  const tree = page.getByRole("navigation", { name: "Campaign structure" });
+
+  // Campaign level: name, Advantage+ campaign budget.
+  await page.getByRole("textbox", { name: "Campaign name" }).fill("E2E editor campaign");
+  await page.getByRole("textbox", { name: "Campaign budget" }).fill("50");
+  await expect(page.getByText("Draft saved")).toBeVisible();
+
+  // Ad level: text first, so ads made from the library copy it.
+  await tree.getByRole("button", { name: /^Lumen CA ad 1/ }).click();
+  await page.getByLabel("Primary text 1").fill("Wake up glowing.");
+  await page.getByLabel("Headline 1").fill("Glow serum");
+
+  // Ad set level: one ad per creative from the library.
+  await tree.getByRole("button", { name: /^Lumen CA ad set 1/ }).click();
+  await page.getByRole("button", { name: "Create ads from library" }).click();
+  const picker = page.getByRole("dialog");
+  await picker.getByLabel("Select e2eglow").check();
+  await picker.getByLabel("Select e2eshine").check();
+  await picker.getByRole("button", { name: "Add 2 creatives" }).click();
+  await expect(tree.getByRole("button", { name: /^e2eglow/ })).toBeVisible();
+  await expect(tree.getByRole("button", { name: /^e2eshine/ })).toBeVisible();
+
+  // Duplicate the ad set with its ads, as in Ads Manager.
+  await tree.getByRole("button", { name: "More for Lumen CA ad set 1", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Duplicate" }).click();
+  await expect(tree.getByRole("button", { name: /^Lumen CA ad set 1 - Copy/ })).toBeVisible();
+  await expect(tree.getByRole("button", { name: /^e2eglow/ })).toHaveCount(2);
+
+  // Autosave survives a reload.
+  await expect(page.getByText("Draft saved")).toBeVisible();
+  await page.goto(editorUrl);
+  await expect(tree.getByRole("button", { name: /^Lumen CA ad set 1 - Copy/ })).toBeVisible();
+  await expect(page.getByText(/to fix/)).toHaveCount(0);
+
+  const before = new Set((await fakeObjects()).map((o) => o.id));
+  await page.getByRole("button", { name: "Publish" }).click();
+  await page.waitForURL(/\/launches\/[0-9a-f-]{36}$/);
+  await expect(page.getByTestId("launch-status")).toHaveText("Done", { timeout: 90_000 });
+
+  const created = (await fakeObjects()).filter((o) => !before.has(o.id));
+  expect(created.filter((o) => o.type === "campaign").map((o) => o.name)).toEqual(["E2E editor campaign"]);
+  expect(created.filter((o) => o.type === "adset")).toHaveLength(2);
+  expect(created.filter((o) => o.type === "ad")).toHaveLength(4);
+  expect(created.filter((o) => ["campaign", "adset", "ad"].includes(o.type)).every((o) => o.status === "PAUSED")).toBe(true);
+  expect(String(created.find((o) => o.type === "campaign")?.daily_budget)).toBe("5000");
+
+  // Published: the editor link goes to the log.
+  await page.goto(editorUrl);
+  await page.waitForURL(/\/launches\//);
 });

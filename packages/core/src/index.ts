@@ -5,6 +5,7 @@ export * from "./sync";
 export * from "./dates";
 export * from "./queues";
 export * from "./objects";
+export * from "./edit";
 export * from "./fx";
 export * from "./storage";
 export * from "./uploads";

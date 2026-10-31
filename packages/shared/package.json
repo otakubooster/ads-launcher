@@ -22,6 +22,7 @@
     "./creatives": "./src/creatives.ts",
     "./naming": "./src/naming.ts",
     "./meta-options": "./src/meta-options.ts",
-    "./launch-plan": "./src/launch-plan.ts"
+    "./launch-plan": "./src/launch-plan.ts",
+    "./editor": "./src/editor.ts"
   }
 }

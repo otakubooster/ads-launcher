@@ -5,7 +5,7 @@
  */
 export const LAUNCH_FEATURES = process.env.NEXT_PUBLIC_LAUNCH_FEATURES === "1";
 
-export const LAUNCH_PATHS = ["/launch", "/launches", "/creatives", "/copy", "/presets"];
+export const LAUNCH_PATHS = ["/launch", "/launches", "/create", "/creatives", "/copy", "/presets"];
 
 export function isLaunchPath(pathname: string) {
   return LAUNCH_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));

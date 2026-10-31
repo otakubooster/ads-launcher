@@ -221,4 +221,28 @@ describe("runLaunch", () => {
     expect(await acquireLaunchLease(db, launchId, 60)).toBe(true);
     await releaseLaunchLease(db, launchId);
   });
+
+  it("publishes an Ads Manager-style editor campaign with each object's own settings", async () => {
+    const { editorToPlan, newEditorDoc, newAd } = await import("@fahd/shared/editor");
+    const d = { brand: "Lumen", market: "US", date: "2026-11-01", pageId: "300000000000001", instagramUserId: null, pixelId: "500000000000001", event: "PURCHASE", link: "https://lumen.example/us", cta: "SHOP_NOW", urlTags: "utm_source=fb", features: {} };
+    const doc = newEditorDoc(d);
+    doc.campaign = { ...doc.campaign, name: "Editor campaign", campaignBudget: false, bidStrategy: "COST_CAP" };
+    const set = doc.adsets[0]!;
+    Object.assign(set, { name: "Editor set", budgetType: "lifetime", budget: 90000, endTime: "2026-12-01T00:00:00Z", bidAmount: 2500, ageMin: 30, ageMax: 55, gender: "female", placements: ["instagram_reels", "instagram_stories", "facebook_feed"], attribution: "7d_click" });
+    set.ads[0] = { ...set.ads[0]!, name: "Editor ad", creativeIds: groups[0]!.creativeIds, primaryTexts: ["Hi"], displayLink: "lumen.example" };
+    set.ads.push({ ...newAd(d, 2), name: "Editor ad 2", creativeIds: groups[1]!.creativeIds, primaryTexts: ["Two"] });
+    const plan = editorToPlan(doc, ctxCreatives);
+    const [launch] = await db.insert(launches).values({ name: "editor", presetId, createdBy: ownerId, mode: "new_campaign", structure: { ...EMPTY_DRAFT, editor: doc }, status: "queued" }).returning();
+    await createLaunchItems(db, launch!.id, plan);
+    const result = await runLaunch(db, storageFromEnv(), launch!.id, fast);
+    expect(result.status).toBe("done");
+    const campaign = objects("campaign").find((o) => o.name === "Editor campaign")!;
+    expect(campaign.daily_budget).toBeUndefined();
+    const adset = objects("adset").find((o) => o.name === "Editor set")!;
+    expect(adset).toMatchObject({ lifetime_budget: 90000, bid_amount: 2500, bid_strategy: "COST_CAP", end_time: "2026-12-01T00:00:00Z", attribution_spec: [{ event_type: "CLICK_THROUGH", window_days: 7 }] });
+    expect(adset.targeting).toMatchObject({ age_min: 30, age_max: 55, genders: [2], publisher_platforms: ["instagram", "facebook"], instagram_positions: ["reels", "story"], facebook_positions: ["feed"], targeting_automation: { advantage_audience: 0 } });
+    expect(objects("ad").filter((o) => o.name === "Editor ad" || o.name === "Editor ad 2").every((o) => o.status === "PAUSED")).toBe(true);
+    const creative = objects("adcreative").find((o) => o.name === "Editor ad")!;
+    expect(JSON.stringify(creative.asset_feed_spec)).toContain("lumen.example");
+  });
 });

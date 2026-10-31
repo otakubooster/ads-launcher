@@ -1,7 +1,7 @@
 import { adAccounts, adsetTemplates, changeLog, creativeUploads, creatives, launchItems, launches, metaAds, metaAdsets, metaCampaigns, presets } from "@fahd/db/schema";
 import type { AdsetTemplateSpec } from "@fahd/db/schema";
 import { MetaApiError, describeMetaError, setStatus, type BatchRequest, type MetaClient, type Params } from "@fahd/meta";
-import type { CopyBlock, LaunchDraft, LaunchPlan } from "@fahd/shared/launch-plan";
+import type { AdCreativeSettings, AdsetSettings, CampaignSettings, CopyBlock, LaunchDraft, LaunchPlan, Placement } from "@fahd/shared/launch-plan";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { ALERTS, sendAlert } from "./alerts";
 import { markConnectionBroken } from "./connections";
@@ -13,9 +13,9 @@ import { uploadCreativeToAccount, type UploadOptions } from "./uploads";
 
 type Item = typeof launchItems.$inferSelect;
 
-export type CampaignPayload = { source: "new" | "existing"; name: string; metaId?: string; dailyBudget: number | null };
-export type AdsetPayload = { source: "new" | "clone" | "existing"; name: string; existingMetaId?: string; dailyBudget: number | null };
-export type CreativePayload = { name: string; groupKey: string; creativeIds: string[]; copy: CopyBlock; postId?: string };
+export type CampaignPayload = { source: "new" | "existing"; name: string; metaId?: string; dailyBudget: number | null; settings?: CampaignSettings };
+export type AdsetPayload = { source: "new" | "clone" | "existing"; name: string; existingMetaId?: string; dailyBudget: number | null; settings?: AdsetSettings };
+export type CreativePayload = { name: string; groupKey: string; creativeIds: string[]; copy: CopyBlock; postId?: string; creative?: AdCreativeSettings };
 export type AdPayload = { name: string; creativeIds: string[] };
 
 // --- Plan → launch_items -------------------------------------------------------
@@ -37,7 +37,7 @@ export async function createLaunchItems(db: AnyDb, launchId: string, plan: Launc
         launchId,
         level: "adset",
         parentItemId: campaign!.id,
-        payload: { source: a.source, name: a.name, existingMetaId: a.existingMetaId, dailyBudget: a.dailyBudget } satisfies AdsetPayload,
+        payload: { source: a.source, name: a.name, existingMetaId: a.existingMetaId, dailyBudget: a.dailyBudget, settings: a.settings } satisfies AdsetPayload,
         idempotencyKey: key("adset", a.key),
         metaId: a.source === "existing" ? (a.existingMetaId ?? null) : null,
         status: a.source === "existing" ? "done" : "pending",
@@ -50,7 +50,7 @@ export async function createLaunchItems(db: AnyDb, launchId: string, plan: Launc
           launchId,
           level: "creative",
           parentItemId: adset!.id,
-          payload: { name: ad.name, groupKey: ad.group.key, creativeIds: ad.group.creativeIds, copy: ad.copy, postId: ad.group.postId } satisfies CreativePayload,
+          payload: { name: ad.name, groupKey: ad.group.key, creativeIds: ad.group.creativeIds, copy: ad.copy, postId: ad.group.postId, creative: ad.creative } satisfies CreativePayload,
           idempotencyKey: key("creative", ad.key),
         })
         .returning({ id: launchItems.id });
@@ -86,6 +86,8 @@ export function buildCreativeParams(input: {
   urlTags: string | null;
   features: Record<string, "OPT_IN" | "OPT_OUT">;
   postId?: string;
+  /** The link text shown instead of the URL (Ads Manager's "Display link"). */
+  displayLink?: string | null;
 }): Params {
   const params: Params = { name: input.name };
   if (input.urlTags) params.url_tags = input.urlTags;
@@ -109,7 +111,7 @@ export function buildCreativeParams(input: {
     params.object_story_spec =
       f.kind === "video"
         ? { ...identity, video_data: { video_id: f.videoId, image_url: f.thumbnailUrl, message: c.primaryTexts[0], title: c.headlines[0], link_description: c.descriptions[0], call_to_action: cta } }
-        : { ...identity, link_data: { image_hash: f.imageHash, link: c.link, message: c.primaryTexts[0], name: c.headlines[0], description: c.descriptions[0], call_to_action: cta } };
+        : { ...identity, link_data: { image_hash: f.imageHash, link: c.link, message: c.primaryTexts[0], name: c.headlines[0], description: c.descriptions[0], call_to_action: cta, ...(input.displayLink ? { caption: input.displayLink } : {}) } };
     return params;
   }
 
@@ -124,7 +126,7 @@ export function buildCreativeParams(input: {
     bodies: c.primaryTexts.map((text) => ({ text })),
     titles: (c.headlines.length ? c.headlines : [""]).filter(Boolean).map((text) => ({ text })),
     descriptions: c.descriptions.map((text) => ({ text })),
-    link_urls: [{ website_url: c.link }],
+    link_urls: [{ website_url: c.link, ...(input.displayLink ? { display_url: input.displayLink } : {}) }],
     call_to_action_types: [c.cta],
     ad_formats: [isVideo ? "SINGLE_VIDEO" : "SINGLE_IMAGE"],
     ...(byPlacement
@@ -145,6 +147,91 @@ export function buildCreativeParams(input: {
       : { optimization_type: "DEGREES_OF_FREEDOM" }),
   };
   return params;
+}
+
+// --- Editor settings → Meta ------------------------------------------------------
+
+/** Campaign fields from the Ads Manager-style editor (Sales, auction). */
+export function campaignParams(name: string, s: CampaignSettings): Params {
+  return {
+    name,
+    objective: "OUTCOME_SALES",
+    special_ad_categories: [],
+    buying_type: "AUCTION",
+    status: "PAUSED",
+    ...(s.campaignBudget
+      ? {
+          [s.budgetType === "lifetime" ? "lifetime_budget" : "daily_budget"]: s.budget,
+          bid_strategy: s.bidStrategy,
+          ...(s.startTime ? { start_time: s.startTime } : {}),
+          ...(s.endTime ? { stop_time: s.endTime } : {}),
+        }
+      : { is_adset_budget_sharing_enabled: false }),
+  };
+}
+
+const POSITIONS: Record<Placement, [platform: string, field: string, position: string]> = {
+  facebook_feed: ["facebook", "facebook_positions", "feed"],
+  facebook_reels: ["facebook", "facebook_positions", "facebook_reels"],
+  facebook_stories: ["facebook", "facebook_positions", "story"],
+  instagram_feed: ["instagram", "instagram_positions", "stream"],
+  instagram_reels: ["instagram", "instagram_positions", "reels"],
+  instagram_stories: ["instagram", "instagram_positions", "story"],
+  instagram_explore: ["instagram", "instagram_positions", "explore"],
+  audience_network: ["audience_network", "audience_network_positions", "classic"],
+  messenger: ["messenger", "messenger_positions", "messenger_home"],
+};
+
+const ATTRIBUTION: Record<AdsetSettings["attribution"], { event_type: string; window_days: number }[]> = {
+  "7d_click_1d_view": [
+    { event_type: "CLICK_THROUGH", window_days: 7 },
+    { event_type: "VIEW_THROUGH", window_days: 1 },
+  ],
+  "7d_click": [{ event_type: "CLICK_THROUGH", window_days: 7 }],
+  "1d_click": [{ event_type: "CLICK_THROUGH", window_days: 1 }],
+  "1d_click_1d_view": [
+    { event_type: "CLICK_THROUGH", window_days: 1 },
+    { event_type: "VIEW_THROUGH", window_days: 1 },
+  ],
+};
+
+/** Ad set fields from the editor: conversion, budget and schedule, audience, placements. */
+export function adsetParams(name: string, campaignMetaId: string, s: AdsetSettings, campaign: CampaignSettings | undefined): Params {
+  // Advantage+ audience treats age and gender as suggestions; tighter limits need the original audience.
+  const advantage = s.ageMin <= 25 && s.ageMax === 65 && s.gender === "all";
+  const targeting: Record<string, unknown> = {
+    geo_locations: { countries: s.countries },
+    age_min: s.ageMin,
+    age_max: s.ageMax,
+    ...(s.gender === "all" ? {} : { genders: [s.gender === "male" ? 1 : 2] }),
+    targeting_automation: { advantage_audience: advantage ? 1 : 0 },
+  };
+  if (Array.isArray(s.placements)) {
+    const platforms = new Set<string>();
+    for (const p of s.placements) {
+      const [platform, field, position] = POSITIONS[p];
+      platforms.add(platform);
+      targeting[field] = [...((targeting[field] as string[] | undefined) ?? []), position];
+    }
+    targeting.publisher_platforms = [...platforms];
+  }
+  const strategy = campaign?.bidStrategy ?? "LOWEST_COST_WITHOUT_CAP";
+  const ownBudget = !campaign?.campaignBudget;
+  return {
+    name,
+    campaign_id: campaignMetaId,
+    optimization_goal: s.performanceGoal,
+    billing_event: "IMPRESSIONS",
+    promoted_object: { pixel_id: s.pixelId, custom_event_type: s.event },
+    targeting,
+    attribution_spec: ATTRIBUTION[s.attribution],
+    ...(ownBudget ? { [s.budgetType === "lifetime" ? "lifetime_budget" : "daily_budget"]: s.budget, bid_strategy: strategy } : {}),
+    ...(s.bidAmount && (strategy === "COST_CAP" || strategy === "LOWEST_COST_WITH_BID_CAP") ? { bid_amount: s.bidAmount } : {}),
+    ...(s.bidAmount && strategy === "LOWEST_COST_WITH_MIN_ROAS" ? { bid_constraints: { roas_average_floor: s.bidAmount } } : {}),
+    ...(s.startTime ? { start_time: s.startTime } : {}),
+    ...(s.endTime ? { end_time: s.endTime } : {}),
+    status: "PAUSED",
+  };
 }
 
 // --- Runner -------------------------------------------------------------------
@@ -299,14 +386,16 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
         if (!id) {
           const res = await client.post<{ id: string }>(
             `${metaAccountId}/campaigns`,
-            {
-              name: p.name,
-              objective: "OUTCOME_SALES",
-              special_ad_categories: [],
-              buying_type: "AUCTION",
-              status: "PAUSED",
-              ...(p.dailyBudget ? { daily_budget: p.dailyBudget, bid_strategy: "LOWEST_COST_WITHOUT_CAP" } : { is_adset_budget_sharing_enabled: false }),
-            },
+            p.settings
+              ? campaignParams(p.name, p.settings)
+              : {
+                  name: p.name,
+                  objective: "OUTCOME_SALES",
+                  special_ad_categories: [],
+                  buying_type: "AUCTION",
+                  status: "PAUSED",
+                  ...(p.dailyBudget ? { daily_budget: p.dailyBudget, bid_strategy: "LOWEST_COST_WITHOUT_CAP" } : { is_adset_budget_sharing_enabled: false }),
+                },
             meta,
           );
           id = res.id;
@@ -333,6 +422,10 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
           const res = await client.post<{ copied_adset_id: string }>(`${src!.metaId}/copies`, { campaign_id: campaign.metaId, deep_copy: false, status_option: "PAUSED" }, meta);
           id = res.copied_adset_id;
           await client.post(id, { name: p.name, ...(p.dailyBudget ? { daily_budget: p.dailyBudget } : {}) }, meta);
+          await logCreate("adset", id, p.name, res);
+        } else if (!id && p.settings) {
+          const res = await client.post<{ id: string }>(`${metaAccountId}/adsets`, adsetParams(p.name, campaign.metaId, p.settings, (campaign.payload as CampaignPayload).settings), meta);
+          id = res.id;
           await logCreate("adset", id, p.name, res);
         } else if (!id) {
           const spec = template?.spec as AdsetTemplateSpec | undefined;
@@ -414,7 +507,17 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
               method: "POST",
               relativeUrl: `${metaAccountId}/adcreatives`,
               name: `c${i}`,
-              params: buildCreativeParams({ name: payload.name, pageId: preset.pageId, instagramUserId: preset.instagramUserId, files, copy: payload.copy, urlTags: preset.urlTags, features: draft.structure.features, postId: payload.postId }),
+              params: buildCreativeParams({
+                name: payload.name,
+                pageId: payload.creative?.pageId ?? preset.pageId,
+                instagramUserId: payload.creative ? (payload.creative.instagramUserId ?? null) : preset.instagramUserId,
+                files,
+                copy: payload.copy,
+                urlTags: payload.creative ? (payload.creative.urlTags ?? null) : preset.urlTags,
+                features: payload.creative?.features ?? draft.structure.features,
+                postId: payload.postId,
+                displayLink: payload.creative?.displayLink,
+              }),
             });
           }
           requests.push({

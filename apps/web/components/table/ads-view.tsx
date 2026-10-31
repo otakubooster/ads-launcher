@@ -13,7 +13,7 @@ import {
   type Table as TanstackTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Bookmark, ChevronDown, Columns3, CopyPlus, Download, Pause, Play, Rows3, Search, Table2, Trash2, X } from "lucide-react";
+import { Bookmark, ChevronDown, Columns3, CopyPlus, Download, Pause, Pencil, Play, Plus, Rows3, Search, Table2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { adjustBudgetsAction, deleteViewAction, saveViewAction, setBudgetAction, setStatusAction } from "@/app/(app)/ads/actions";
 import { EmptyState } from "@/components/empty-state";
@@ -36,6 +36,7 @@ import { Kbd } from "@/components/ui/kbd";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import type { DateRange } from "@/lib/date-range";
+import { LAUNCH_FEATURES } from "@/lib/features";
 import { formatMoney, formatRoas, moneyInputValue, parseMoneyInput } from "@/lib/format";
 import type { ActionResult } from "@/lib/server/action-result";
 import type { AccountBudgets, AdsRow, Level } from "@/lib/server/ads";
@@ -43,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { useShell } from "@/components/shell/shell-provider";
 import { AdsTable, STICKY_WIDTHS, ROW_HEIGHT } from "./ads-table";
 import { DuplicateDialog } from "./duplicate-dialog";
+import { EditDialog } from "./edit-dialog";
 import { ALL_COLUMNS, COLUMNS, PRESETS, PRESET_LABELS, toCsv, toTableRows, type ColumnId, type PresetId, type TableRow } from "./columns";
 import { DetailDrawer } from "./detail-drawer";
 
@@ -105,6 +107,8 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
   const [duplicateRows, setDuplicateRows] = React.useState<TableRow[] | null>(null);
   // Stable for the memoized rows.
   const onDuplicateRow = React.useCallback((r: TableRow) => setDuplicateRows([r]), []);
+  const [editRow, setEditRow] = React.useState<TableRow | null>(null);
+  const onEditRow = React.useCallback((r: TableRow) => setEditRow(r), []);
   const [busy, startBusy] = React.useTransition();
   const lastClicked = React.useRef<string | null>(null);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -314,6 +318,14 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {canEdit && LAUNCH_FEATURES && (
+          <Button variant="primary" asChild>
+            <Link href="/launch">
+              <Plus />
+              Create
+            </Link>
+          </Button>
+        )}
         <div className="relative w-64 max-w-full">
           <Search className="pointer-events-none absolute top-2 left-2.5 size-4 text-slate-11" />
           <Input data-filter-input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by name or ID" aria-label="Search" className="pl-8" />
@@ -449,6 +461,7 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
               onBudget={(row, el) => setBudgetEdit({ row, rect: el.getBoundingClientRect() })}
               onSelectRange={selectRange}
               onDuplicate={canEdit ? onDuplicateRow : undefined}
+              onEdit={canEdit ? onEditRow : undefined}
               scrollRef={scrollRef}
               totalReach={totalReach}
             />
@@ -489,6 +502,12 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          {selectedRows.length === 1 && (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => setEditRow(selectedRows[0]!)}>
+              <Pencil />
+              Edit
+            </Button>
+          )}
           <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDuplicateRows(selectedRows)}>
             <CopyPlus />
             Duplicate
@@ -507,6 +526,18 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
           if (res.ok) {
             setDuplicateRows(null);
             setRowSelection({});
+            router.refresh();
+          }
+        }}
+      />
+      <EditDialog
+        key={editRow?.id ?? "none"}
+        row={editRow}
+        onClose={() => setEditRow(null)}
+        onDone={(res) => {
+          report(res);
+          if (res.ok) {
+            setEditRow(null);
             router.refresh();
           }
         }}

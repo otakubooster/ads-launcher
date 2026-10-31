@@ -2,6 +2,9 @@
 
 import {
   duplicateObject,
+  editObject,
+  loadEditable,
+  type EditableObject,
   changeDailyBudget,
   changeStatus,
   quarterHourBucket,
@@ -320,5 +323,50 @@ export async function duplicateAction(objectLevel: string, objectIds: string[], 
     revalidatePath("/ads");
     if (failed.length === 0) return { ok: true, message: `Created ${created} ${created === 1 ? "copy" : "copies"}, paused.`, data: { failed } };
     return summarize(created, failed, "Created copies of");
+  });
+}
+
+/** The edit pane's current values (from Meta's last synced JSON) and the account currency. */
+export async function loadEditAction(objectLevel: string, objectId: string): Promise<ActionResult<EditableObject & { currency: string }>> {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ level, id: z.uuid() }).parse({ level: objectLevel, id: objectId });
+    // RLS: the member must be able to read the object before we load it privileged.
+    const table = MIRROR[input.level];
+    const [row] = (await asUser(session.userId, (tx) =>
+      tx.execute(sql`select a.currency from ${sql.raw(table)} o join ad_accounts a on a.id = o.ad_account_id where o.id = ${input.id}`),
+    )) as unknown as { currency: string }[];
+    if (!row) throw new UserError("Not found", "It may have been deleted on Meta. Refresh the table.");
+    const data = await loadEditable(getDb(), input.level, input.id);
+    return { ok: true, data: { ...data, currency: row.currency } };
+  });
+}
+
+const editInput = z.object({
+  name: z.string().max(400).optional(),
+  endTime: z.iso.datetime({ offset: true }).nullable().optional(),
+  bidAmount: z.number().int().positive().nullable().optional(),
+  roasFloor: z.number().positive().max(1000).nullable().optional(),
+  countries: z.array(z.string().regex(/^[A-Z]{2}$/)).min(1).max(250).optional(),
+  ageMin: z.number().int().min(13).max(65).optional(),
+  ageMax: z.number().int().min(13).max(65).optional(),
+});
+
+/** Ads Manager's edit pane: name, schedule, bid and audience; one change_log row with before, after and Meta's response. */
+export async function editObjectAction(objectLevel: string, objectId: string, edit: z.infer<typeof editInput>) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ level, id: z.uuid(), edit: editInput }).parse({ level: objectLevel, id: objectId, edit });
+    await assertNotKilled();
+    const readable = await asUser(session.userId, (tx) => tx.execute(sql`select 1 from ${sql.raw(MIRROR[input.level])} where id = ${input.id}`));
+    if (!(readable as unknown as unknown[]).length) throw new UserError("Not found", "It may have been deleted on Meta. Refresh the table.");
+    let skipped = false;
+    const change = await logged(session.userId, input.level, input.id, "edit", async () => {
+      const c = await editObject(getDb(), input.level, input.id, input.edit);
+      skipped = Object.keys(c.after).length === 0;
+      return c;
+    });
+    revalidatePath("/ads");
+    return { ok: true, message: skipped ? "Nothing changed." : `Saved ${change.name}.` } satisfies ActionResult;
   });
 }

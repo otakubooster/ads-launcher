@@ -5,7 +5,11 @@ import { DesktopOnly } from "@/components/launch/desktop-only";
 import { PageHeader } from "@/components/page-header";
 import { requireSession } from "@/lib/server/auth";
 import { loadCreatives } from "@/lib/server/creatives";
+import { asUser } from "@/lib/server/db";
+import { isEditorLaunch } from "@/lib/server/editor";
 import { loadBuilder } from "@/lib/server/launch";
+import { launches } from "@fahd/db/schema";
+import { eq } from "drizzle-orm";
 
 export const metadata: Metadata = { title: "Launch" };
 
@@ -14,6 +18,9 @@ export default async function LaunchDraftPage({ params }: { params: Promise<{ dr
   const { draftId } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(draftId)) notFound();
   if (session.role === "viewer") redirect(`/launches/${draftId}`);
+  // Ads Manager-style drafts open in the campaign editor.
+  const [row] = await asUser(session.userId, (tx) => tx.select({ structure: launches.structure }).from(launches).where(eq(launches.id, draftId)));
+  if (row && isEditorLaunch(row.structure)) redirect(`/create/${draftId}`);
   const data = await loadBuilder(session.userId, draftId);
   if (!data) notFound();
   if ("status" in data) redirect(`/launches/${draftId}`);

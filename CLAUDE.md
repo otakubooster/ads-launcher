@@ -186,3 +186,13 @@ everything created paused. Screens checked in light and dark against the spec.
   re-checked next step. /api/launch/step runs ~40 s per call under a lease
   (launches.lease_until), then calls itself; kickLaunch() starts it (inline without
   CRON_SECRET); the cron resumes stalledLaunches(). Plans error above 50 ads per ad set.
+- Ads Manager parity: Duplicate = core duplicateObject() via Meta /copies (deep copy, " - Copy" suffix,
+  status_option PAUSED, destination in the same account only); components/table/duplicate-dialog.tsx.
+  Edit = core editObject()/loadEditable() (name, ad set end_time, bid_amount / ROAS floor, countries
+  and ages merged into Meta's full targeting; only changed fields are sent); status and budgets keep
+  their own guarded actions. components/table/edit-dialog.tsx, row action + bulk bar (one row).
+- Campaign editor (Create campaign): @fahd/shared/editor holds EditorDoc (campaign → ad sets → ads,
+  each with its own settings) + validateEditor/editorToPlan; stored as launches.structure.editor
+  (isEditorLaunch). /create/[id] (components/editor/*) autosaves through saveEditor; publishEditor
+  validates again, createLaunchItems with per-object settings (core campaignParams/adsetParams), then
+  the normal runner and launch log. /launch/[draftId] redirects editor drafts to /create/[id].
