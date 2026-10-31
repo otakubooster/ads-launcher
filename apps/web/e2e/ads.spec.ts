@@ -83,3 +83,48 @@ test("the Ads Manager column set shows results, reach, frequency, settings and f
   await expect(row.getByRole("cell").nth(8)).not.toHaveText("—");
   await expect(page.locator("tfoot")).not.toContainText("NaN");
 });
+
+test("Duplicate works like Ads Manager: ad sets into the original campaign, an ad into another ad set, all paused", async ({ page }) => {
+  await page.goto("/ads?level=adsets");
+  const table = page.getByRole("region", { name: "Ads table" });
+  await table.getByRole("checkbox", { name: "Select Lumen_UK_glow_1" }).check();
+  await page.getByRole("toolbar", { name: "Bulk actions" }).getByRole("button", { name: "Duplicate" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Duplicate ad set")).toBeVisible();
+  await expect(dialog.getByLabel("Original campaign")).toBeChecked();
+  await dialog.getByLabel("Number of copies").fill("2");
+  await dialog.getByRole("button", { name: "Duplicate" }).click();
+  await expect(page.getByText("Created 2 copies, paused.")).toBeVisible({ timeout: 30_000 });
+  await expect(table.getByRole("row", { name: /Lumen_UK_glow_1 - Copy/ })).toHaveCount(2);
+  const copies = (await fakeObjects()).filter((o) => o.type === "adset" && o.name === "Lumen_UK_glow_1 - Copy");
+  expect(copies.map((c) => c.status)).toEqual(["PAUSED", "PAUSED"]);
+
+  await page.goto("/ads?level=ads");
+  const ad = table.getByRole("row", { name: /hook2_ugc_2/ }).first();
+  await ad.hover();
+  await ad.getByRole("button", { name: "Duplicate" }).click();
+  await dialog.getByLabel("Existing ad set").check();
+  await dialog.getByLabel("Choose ad set").selectOption({ index: 1 });
+  await dialog.getByRole("button", { name: "Duplicate" }).click();
+  await expect(page.getByText("Created 1 copy, paused.")).toBeVisible({ timeout: 30_000 });
+  expect((await fakeObjects()).filter((o) => o.type === "ad" && o.name === "hook2_ugc_2 - Copy" && o.status === "PAUSED").length).toBeGreaterThanOrEqual(1);
+});
+
+test("Edit changes an ad set's name, schedule and audience on Meta, logged", async ({ page }) => {
+  await page.goto("/ads?level=adsets");
+  const table = page.getByRole("region", { name: "Ads table" });
+  const row = table.getByRole("row", { name: /Lumen_UK_routine_2/ }).first();
+  await row.hover();
+  await row.getByRole("button", { name: "Edit" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Edit ad set")).toBeVisible();
+  await dialog.getByLabel("Ad set name").fill("Lumen_UK_routine_2_edited");
+  await dialog.getByLabel("Locations").fill("GB, IE");
+  await dialog.getByLabel("Minimum age").selectOption("25");
+  await dialog.getByRole("button", { name: "Publish changes" }).click();
+  await expect(page.getByText("Saved Lumen_UK_routine_2_edited.")).toBeVisible({ timeout: 30_000 });
+  await expect(table.getByRole("row", { name: /Lumen_UK_routine_2_edited/ })).toHaveCount(1);
+  const live = (await fakeObjects()).find((o) => o.type === "adset" && o.name === "Lumen_UK_routine_2_edited") as unknown as { targeting: { geo_locations: { countries: string[] }; age_min: number } };
+  expect(live.targeting.geo_locations.countries).toEqual(["GB", "IE"]);
+  expect(live.targeting.age_min).toBe(25);
+});

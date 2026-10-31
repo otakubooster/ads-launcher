@@ -7,7 +7,7 @@ import type { AnyDb } from "./types";
 
 const CAMPAIGN_FIELDS = "id,name,status,effective_status,objective,bid_strategy,daily_budget,lifetime_budget,stop_time";
 const ADSET_FIELDS =
-  "id,name,status,effective_status,campaign_id,optimization_goal,bid_strategy,daily_budget,lifetime_budget,billing_event,targeting,learning_stage_info,promoted_object,attribution_spec,end_time";
+  "id,name,status,effective_status,campaign_id,optimization_goal,bid_strategy,daily_budget,lifetime_budget,billing_event,targeting,learning_stage_info,promoted_object,attribution_spec,start_time,end_time,bid_amount,bid_constraints";
 const AD_FIELDS = "id,name,status,effective_status,campaign_id,adset_id,creative{id,thumbnail_url},ad_review_feedback";
 const INSIGHT_FIELDS =
   "ad_id,adset_id,campaign_id,spend,impressions,inline_link_clicks,actions,action_values,video_thruplay_watched_actions";

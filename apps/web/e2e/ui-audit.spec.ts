@@ -34,6 +34,25 @@ for (const scheme of ["light", "dark"] as const) {
       const violations = await audit(page);
       if (violations.length) failures.push(`${path}\n  ${violations.join("\n  ")}`);
     }
+
+    // The campaign editor: campaign, ad set and ad panels.
+    await page.goto("/launch");
+    const create = page.getByRole("button", { name: "Create campaign" });
+    if (await create.count()) {
+      await create.click();
+      await page.waitForURL(/\/create\//);
+      const tree = page.getByRole("navigation", { name: "Campaign structure" });
+      for (const [panel, open] of [
+        ["campaign", async () => {}],
+        ["ad set", () => tree.getByRole("button", { name: /^(?!More for).*ad set 1/ }).first().click()],
+        ["ad", () => tree.getByRole("button", { name: /^(?!More for).*ad 1/ }).last().click()],
+      ] as const) {
+        await open();
+        await page.waitForLoadState("networkidle");
+        const violations = await audit(page);
+        if (violations.length) failures.push(`/create (${panel})\n  ${violations.join("\n  ")}`);
+      }
+    }
     expect(failures, failures.join("\n\n")).toEqual([]);
   });
 }

@@ -24,7 +24,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
       .innerJoin(brands, eq(brands.id, presets.brandId))
       .orderBy(asc(brands.name), asc(presets.market)),
     drafts: await tx
-      .select({ id: launches.id, name: launches.name, updatedAt: launches.updatedAt, by: sql<string>`coalesce(${users.name}, ${users.email})`, brand: brands.name, market: presets.market })
+      .select({ id: launches.id, name: launches.name, updatedAt: launches.updatedAt, by: sql<string>`coalesce(${users.name}, ${users.email})`, editor: sql<boolean>`${launches.structure} ? 'editor'`, brand: brands.name, market: presets.market })
       .from(launches)
       .innerJoin(presets, eq(presets.id, launches.presetId))
       .innerJoin(brands, eq(brands.id, presets.brandId))
@@ -38,7 +38,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
   if (data.presets.length === 0) {
     return (
       <>
-        <PageHeader title="Launch" description="Bulk-launch ads from creatives and copy. Everything is created paused." />
+        <PageHeader title="Launch" description="Create a campaign the Ads Manager way, or bulk-launch from creatives and copy. Everything is created paused." />
         <EmptyState
           icon={Rocket}
           title="Start with a preset"
@@ -55,7 +55,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <PageHeader title="Launch" description="Bulk-launch ads from creatives and copy. Everything is created paused." />
+      <PageHeader title="Launch" description="Create a campaign the Ads Manager way, or bulk-launch from creatives and copy. Everything is created paused." />
       <div className="grid max-w-3xl gap-8">
         {canLaunch && (
           <DesktopOnly>
@@ -72,8 +72,9 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
             <ul className="overflow-hidden rounded-card border border-slate-6">
               {data.drafts.map((d) => (
                 <li key={d.id} className="border-b border-slate-6 last:border-0">
-                  <Link href={`/launch/${d.id}`} className="flex h-10 items-center gap-3 px-3 text-ui hover:bg-slate-2">
+                  <Link href={d.editor ? `/create/${d.id}` : `/launch/${d.id}`} className="flex h-10 items-center gap-3 px-3 text-ui hover:bg-slate-2">
                     <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
+                    <span className="text-label text-slate-11">{d.editor ? "Campaign" : "Bulk launch"}</span>
                     <span className="text-slate-11">
                       {d.brand} · {d.market}
                     </span>

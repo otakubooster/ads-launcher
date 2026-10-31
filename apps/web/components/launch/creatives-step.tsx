@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import type { DraftCreativeGroup } from "@fahd/shared/launch-plan";
 import type { StepProps } from "./builder";
 
-type LibraryGroup = { key: string; items: CreativeItem[]; lead: CreativeItem; ratios: string[] };
+export type LibraryGroup = { key: string; items: CreativeItem[]; lead: CreativeItem; ratios: string[] };
 
 const RATIO_ORDER = ["9:16", "4:5", "1:1", "16:9"];
 
@@ -216,7 +216,7 @@ export function CreativesStep({ data, library, draft, update }: StepProps) {
   );
 }
 
-function LibraryPicker({
+export function LibraryPicker({
   open,
   onOpenChange,
   groups,

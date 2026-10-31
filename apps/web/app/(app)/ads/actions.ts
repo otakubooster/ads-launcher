@@ -1,6 +1,13 @@
 "use server";
 
 import {
+  duplicateObject,
+  editAdCopy,
+  editObject,
+  loadAdCopy,
+  loadEditable,
+  type AdCopy,
+  type EditableObject,
   changeDailyBudget,
   changeStatus,
   quarterHourBucket,
@@ -264,5 +271,139 @@ export async function deleteViewAction(id: string): Promise<ActionResult> {
     await asUser(session.userId, (tx) => tx.delete(savedViews).where(eq(savedViews.id, z.uuid().parse(id))));
     revalidatePath("/ads");
     return { ok: true, message: "View deleted." };
+  });
+}
+
+export type DuplicateTarget = { id: string; name: string; parentName: string | null };
+
+/** Campaigns (for ad sets) or ad sets (for ads) in one account, for "Existing campaign / ad set". */
+export async function loadDuplicateTargets(objectLevel: string, adAccountId: string): Promise<ActionResult<DuplicateTarget[]>> {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ level: z.enum(["adset", "ad"]), account: z.uuid() }).parse({ level: objectLevel, account: adAccountId });
+    const rows = await asUser(session.userId, (tx) =>
+      input.level === "adset"
+        ? tx.execute(sql`select id, name, null as parent_name from meta_campaigns where ad_account_id = ${input.account} and status not in ('DELETED', 'ARCHIVED') order by name`)
+        : tx.execute(sql`select s.id, s.name, c.name as parent_name from meta_adsets s join meta_campaigns c on c.id = s.campaign_id
+            where s.ad_account_id = ${input.account} and s.status not in ('DELETED', 'ARCHIVED') order by c.name, s.name`),
+    );
+    return { ok: true, data: (rows as unknown as { id: string; name: string; parent_name: string | null }[]).map((r) => ({ id: r.id, name: r.name, parentName: r.parent_name })) };
+  });
+}
+
+/** Ads Manager's Duplicate: copies are created paused, each logged with Meta's response. */
+export async function duplicateAction(objectLevel: string, objectIds: string[], options: { copies: number; destinationId?: string | null }) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z
+      .object({ level, ids: z.array(z.uuid()).min(1).max(50), copies: z.number().int().min(1).max(10), destinationId: z.uuid().nullish() })
+      .parse({ level: objectLevel, ids: objectIds, ...options });
+    await assertNotKilled();
+    const failed: Failure[] = [];
+    let created = 0;
+    for (const id of input.ids) {
+      try {
+        const result = await duplicateObject(getDb(), { level: input.level, id, copies: input.copies, destinationId: input.destinationId });
+        await asUser(session.userId, (tx) =>
+          tx.insert(changeLog).values(
+            result.copies.map((c) => ({
+              actorId: session.userId,
+              source: "ui" as const,
+              entityLevel: input.level,
+              entityId: c.copiedId || result.metaId,
+              action: "duplicate",
+              before: { sourceId: result.metaId, name: result.name },
+              after: { copiedId: c.copiedId, status: "PAUSED" },
+              metaResponse: c.response as object,
+            })),
+          ),
+        );
+        created += result.copies.length;
+      } catch (e) {
+        failed.push(failureOf(id, e));
+      }
+    }
+    revalidatePath("/ads");
+    if (failed.length === 0) return { ok: true, message: `Created ${created} ${created === 1 ? "copy" : "copies"}, paused.`, data: { failed } };
+    return summarize(created, failed, "Created copies of");
+  });
+}
+
+/** The edit pane's current values (from Meta's last synced JSON) and the account currency. */
+export async function loadEditAction(objectLevel: string, objectId: string): Promise<ActionResult<EditableObject & { currency: string }>> {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ level, id: z.uuid() }).parse({ level: objectLevel, id: objectId });
+    // RLS: the member must be able to read the object before we load it privileged.
+    const table = MIRROR[input.level];
+    const [row] = (await asUser(session.userId, (tx) =>
+      tx.execute(sql`select a.currency from ${sql.raw(table)} o join ad_accounts a on a.id = o.ad_account_id where o.id = ${input.id}`),
+    )) as unknown as { currency: string }[];
+    if (!row) throw new UserError("Not found", "It may have been deleted on Meta. Refresh the table.");
+    const data = await loadEditable(getDb(), input.level, input.id);
+    return { ok: true, data: { ...data, currency: row.currency } };
+  });
+}
+
+const editInput = z.object({
+  name: z.string().max(400).optional(),
+  endTime: z.iso.datetime({ offset: true }).nullable().optional(),
+  bidAmount: z.number().int().positive().nullable().optional(),
+  roasFloor: z.number().positive().max(1000).nullable().optional(),
+  countries: z.array(z.string().regex(/^[A-Z]{2}$/)).min(1).max(250).optional(),
+  ageMin: z.number().int().min(13).max(65).optional(),
+  ageMax: z.number().int().min(13).max(65).optional(),
+});
+
+/** Ads Manager's edit pane: name, schedule, bid and audience; one change_log row with before, after and Meta's response. */
+export async function editObjectAction(objectLevel: string, objectId: string, edit: z.infer<typeof editInput>) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ level, id: z.uuid(), edit: editInput }).parse({ level: objectLevel, id: objectId, edit });
+    await assertNotKilled();
+    const readable = await asUser(session.userId, (tx) => tx.execute(sql`select 1 from ${sql.raw(MIRROR[input.level])} where id = ${input.id}`));
+    if (!(readable as unknown as unknown[]).length) throw new UserError("Not found", "It may have been deleted on Meta. Refresh the table.");
+    let skipped = false;
+    const change = await logged(session.userId, input.level, input.id, "edit", async () => {
+      const c = await editObject(getDb(), input.level, input.id, input.edit);
+      skipped = Object.keys(c.after).length === 0;
+      return c;
+    });
+    revalidatePath("/ads");
+    return { ok: true, message: skipped ? "Nothing changed." : `Saved ${change.name}.` } satisfies ActionResult;
+  });
+}
+
+/** The live ad's text, link and button, read from its creative on Meta. */
+export async function loadAdCopyAction(adId: string): Promise<ActionResult<AdCopy>> {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const id = z.uuid().parse(adId);
+    const readable = await asUser(session.userId, (tx) => tx.execute(sql`select 1 from meta_ads where id = ${id}`));
+    if (!(readable as unknown as unknown[]).length) throw new UserError("Not found", "It may have been deleted on Meta. Refresh the table.");
+    return { ok: true, data: await loadAdCopy(getDb(), id) };
+  });
+}
+
+const copyInput = z.object({
+  primaryTexts: z.array(z.string().max(5000)).max(5),
+  headlines: z.array(z.string().max(1000)).max(5),
+  descriptions: z.array(z.string().max(1000)).max(5),
+  link: z.url().max(2000),
+  cta: z.string().regex(/^[A-Z_]+$/),
+  urlTags: z.string().max(2000).nullable(),
+});
+
+/** Ads Manager's ad text edit: a new creative with the same media, swapped onto the ad; logged. */
+export async function editAdCopyAction(adId: string, copy: z.infer<typeof copyInput>) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ id: z.uuid(), copy: copyInput }).parse({ id: adId, copy });
+    await assertNotKilled();
+    const readable = await asUser(session.userId, (tx) => tx.execute(sql`select 1 from meta_ads where id = ${input.id}`));
+    if (!(readable as unknown as unknown[]).length) throw new UserError("Not found", "It may have been deleted on Meta. Refresh the table.");
+    const change = await logged(session.userId, "ad", input.id, "edit_creative", () => editAdCopy(getDb(), input.id, input.copy));
+    revalidatePath("/ads");
+    return { ok: true, message: Object.keys(change.after).length ? `Saved ${change.name}. Meta reviews the new text before it runs.` : "Nothing changed." } satisfies ActionResult;
   });
 }
