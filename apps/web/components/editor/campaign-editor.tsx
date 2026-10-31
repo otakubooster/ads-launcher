@@ -220,7 +220,7 @@ export function CampaignEditor({ data, library }: { data: EditorData; library: C
       </div>
 
       <div className="grid grid-cols-[280px_minmax(0,1fr)] items-start gap-6">
-        <aside className="sticky top-20 max-h-[calc(100dvh-6rem)] overflow-y-auto rounded-card border border-slate-6 p-2">
+        <aside className="sticky top-[72px] max-h-[calc(100dvh-160px)] overflow-y-auto rounded-card border border-slate-6 p-2">
           <EditorTree
             doc={doc}
             selected={current}

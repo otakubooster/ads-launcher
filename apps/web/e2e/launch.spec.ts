@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { GRAPH, ensureConnected, fakeObjects, makeImage, signIn } from "./helpers";
+import { GRAPH, ensureConnected, fakeObjects, makeImage, signIn, syncNow } from "./helpers";
 
 // The second test launches the creatives the first one uploads.
 test.describe.configure({ mode: "serial" });
@@ -226,4 +226,19 @@ test("the Ads Manager-style editor creates a campaign with ad sets and ads, dupl
   // Published: the editor link goes to the log.
   await page.goto(editorUrl);
   await page.waitForURL(/\/launches\//);
+
+  // Edit a live ad's text, like Ads Manager: a new creative is swapped in.
+  await page.goto("/ads?level=ads");
+  await syncNow(page);
+  await page.reload();
+  const adRow = page.getByRole("region", { name: "Ads table" }).getByRole("row", { name: /e2eshine/ }).first();
+  await adRow.hover();
+  await adRow.getByRole("button", { name: "Edit" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Primary text 1")).toHaveValue("Wake up glowing.");
+  await dialog.getByLabel("Primary text 1").fill("Glow in 7 days.");
+  await dialog.getByRole("button", { name: "Publish changes" }).click();
+  await expect(page.getByText(/Meta reviews the new text/)).toBeVisible({ timeout: 30_000 });
+  const creatives = (await fakeObjects()).filter((o) => o.type === "adcreative") as unknown as { object_story_spec?: { link_data?: { message?: string } } }[];
+  expect(creatives.some((c) => c.object_story_spec?.link_data?.message === "Glow in 7 days.")).toBe(true);
 });

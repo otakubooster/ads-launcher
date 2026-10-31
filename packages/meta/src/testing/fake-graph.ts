@@ -323,6 +323,12 @@ export function createFakeGraph() {
     if (method === "GET" && !edge) return [200, strip(obj)];
     if (method === "POST" && !edge) {
       for (const [k, v] of Object.entries(params)) obj[k] = json(k) ?? v;
+      // Swapping an ad's creative: Meta then reports the new creative's id and thumbnail.
+      if (obj.type === "ad" && params.creative) {
+        const next = state.objects.get((obj.creative as { creative_id?: string })?.creative_id ?? "");
+        if (!next) return [400, graphError(100, "Invalid parameter", { error_user_title: "Creative not found", error_user_msg: "The ad's creative does not exist." })];
+        obj.creative = { id: next.id, thumbnail_url: next.thumbnail_url };
+      }
       if (params.status) obj.effective_status = params.status === "ACTIVE" ? "ACTIVE" : params.status;
       if (params.status && obj.type !== "ad") {
         for (const child of state.objects.values()) {

@@ -2,8 +2,11 @@
 
 import {
   duplicateObject,
+  editAdCopy,
   editObject,
+  loadAdCopy,
   loadEditable,
+  type AdCopy,
   type EditableObject,
   changeDailyBudget,
   changeStatus,
@@ -368,5 +371,39 @@ export async function editObjectAction(objectLevel: string, objectId: string, ed
     });
     revalidatePath("/ads");
     return { ok: true, message: skipped ? "Nothing changed." : `Saved ${change.name}.` } satisfies ActionResult;
+  });
+}
+
+/** The live ad's text, link and button, read from its creative on Meta. */
+export async function loadAdCopyAction(adId: string): Promise<ActionResult<AdCopy>> {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const id = z.uuid().parse(adId);
+    const readable = await asUser(session.userId, (tx) => tx.execute(sql`select 1 from meta_ads where id = ${id}`));
+    if (!(readable as unknown as unknown[]).length) throw new UserError("Not found", "It may have been deleted on Meta. Refresh the table.");
+    return { ok: true, data: await loadAdCopy(getDb(), id) };
+  });
+}
+
+const copyInput = z.object({
+  primaryTexts: z.array(z.string().max(5000)).max(5),
+  headlines: z.array(z.string().max(1000)).max(5),
+  descriptions: z.array(z.string().max(1000)).max(5),
+  link: z.url().max(2000),
+  cta: z.string().regex(/^[A-Z_]+$/),
+  urlTags: z.string().max(2000).nullable(),
+});
+
+/** Ads Manager's ad text edit: a new creative with the same media, swapped onto the ad; logged. */
+export async function editAdCopyAction(adId: string, copy: z.infer<typeof copyInput>) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ id: z.uuid(), copy: copyInput }).parse({ id: adId, copy });
+    await assertNotKilled();
+    const readable = await asUser(session.userId, (tx) => tx.execute(sql`select 1 from meta_ads where id = ${input.id}`));
+    if (!(readable as unknown as unknown[]).length) throw new UserError("Not found", "It may have been deleted on Meta. Refresh the table.");
+    const change = await logged(session.userId, "ad", input.id, "edit_creative", () => editAdCopy(getDb(), input.id, input.copy));
+    revalidatePath("/ads");
+    return { ok: true, message: Object.keys(change.after).length ? `Saved ${change.name}. Meta reviews the new text before it runs.` : "Nothing changed." } satisfies ActionResult;
   });
 }

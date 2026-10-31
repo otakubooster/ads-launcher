@@ -5,7 +5,7 @@ import { FAKE_BUSINESS_ID, createFakeGraph } from "@fahd/meta/testing";
 import { encryptToken } from "@fahd/shared";
 import { eq, like } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { editObject, loadEditable, syncAccountObjects, syncConnectionAssets } from "../src";
+import { clientForAdAccount, editAdCopy, editObject, loadAdCopy, loadEditable, syncAccountObjects, syncConnectionAssets } from "../src";
 
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -59,5 +59,42 @@ describe("editObject", () => {
     const [s] = await db.select().from(metaAdsets).where(eq(metaAdsets.name, "Lumen_US_routine_2"));
     await expect(editObject(db, "adset", s!.id, { name: "  " })).rejects.toThrow(/empty/);
     await expect(editObject(db, "adset", s!.id, { ageMin: 50, ageMax: 30 })).rejects.toThrow(/minimum first/);
+  });
+});
+
+describe("editAdCopy", () => {
+  async function adWithCreative(spec: Record<string, unknown>) {
+    const [s] = await db.select().from(metaAdsets).where(eq(metaAdsets.name, "Lumen_US_glow_3"));
+    const { client } = await clientForAdAccount(db, accountId);
+    const post = (path: string, body: Record<string, unknown>) => client.post<{ id: string }>(path, body as never, { accountId: "act_200000000000001" });
+    const creative = await post("act_200000000000001/adcreatives", { name: "copy test", ...spec });
+    const ad = await post("act_200000000000001/ads", { name: `copy test ad ${creative.id}`, adset_id: s!.metaId, creative: { creative_id: creative.id }, status: "PAUSED" });
+    await syncAccountObjects(db, accountId);
+    const [row] = await db.select().from(metaAds).where(eq(metaAds.metaId, ad.id));
+    return row!;
+  }
+
+  it("reads and replaces a single-image ad's text with a new creative", async () => {
+    const ad = await adWithCreative({ object_story_spec: { page_id: "300000000000001", link_data: { image_hash: "abc", link: "https://lumen.example", message: "Old text", name: "Old headline", call_to_action: { type: "SHOP_NOW", value: { link: "https://lumen.example" } } } } });
+    const copy = await loadAdCopy(db, ad.id);
+    expect(copy).toMatchObject({ format: "single", primaryTexts: ["Old text"], headlines: ["Old headline"], cta: "SHOP_NOW" });
+    const change = await editAdCopy(db, ad.id, { ...copy, primaryTexts: ["New text"], cta: "LEARN_MORE" });
+    expect(change.creativeId).not.toBe(ad.creativeId);
+    const live = await fakeObject(change.creativeId);
+    expect(live.object_story_spec).toMatchObject({ link_data: { image_hash: "abc", message: "New text", name: "Old headline", call_to_action: { type: "LEARN_MORE" } } });
+    expect((await fakeObject(ad.metaId)).creative).toMatchObject({ id: change.creativeId });
+    expect((await loadAdCopy(db, ad.id)).primaryTexts).toEqual(["New text"]);
+  });
+
+  it("keeps up to five options on a multi-text ad and refuses posts", async () => {
+    const ad = await adWithCreative({ object_story_spec: { page_id: "300000000000001" }, asset_feed_spec: { images: [{ hash: "abc" }], bodies: [{ text: "A" }, { text: "B" }], titles: [{ text: "T" }], link_urls: [{ website_url: "https://lumen.example" }], call_to_action_types: ["SHOP_NOW"], ad_formats: ["SINGLE_IMAGE"] } });
+    const copy = await loadAdCopy(db, ad.id);
+    expect(copy.format).toBe("multi");
+    const change = await editAdCopy(db, ad.id, { ...copy, primaryTexts: ["A", "B", "C"] });
+    expect((await fakeObject(change.creativeId)).asset_feed_spec).toMatchObject({ images: [{ hash: "abc" }], bodies: [{ text: "A" }, { text: "B" }, { text: "C" }] });
+
+    const post = await adWithCreative({ object_story_id: "300000000000001_123" });
+    expect((await loadAdCopy(db, post.id)).format).toBe("post");
+    await expect(editAdCopy(db, post.id, { ...copy })).rejects.toThrow(/existing post/);
   });
 });

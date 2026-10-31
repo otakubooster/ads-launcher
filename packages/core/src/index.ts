@@ -6,6 +6,7 @@ export * from "./dates";
 export * from "./queues";
 export * from "./objects";
 export * from "./edit";
+export * from "./ad-copy";
 export * from "./fx";
 export * from "./storage";
 export * from "./uploads";
