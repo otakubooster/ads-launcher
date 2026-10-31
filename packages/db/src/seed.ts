@@ -201,7 +201,7 @@ export async function seed(
         pixelId: metaId(5, i + 1),
         linkUrl: `https://${a.brand.toLowerCase()}.example/${a.market.toLowerCase()}`,
         urlTags: "utm_source=facebook&utm_medium=paid&utm_campaign={{campaign.name}}&utm_content={{ad.name}}",
-        creativeFeatures: { image_touchups: "OPT_IN", text_optimizations: "OPT_OUT", music: "OPT_OUT" } as s.CreativeFeatures,
+        creativeFeatures: { image_touchups: "OPT_IN", text_optimizations: "OPT_OUT" } as s.CreativeFeatures,
         namingTemplateId: naming.find((n) => n.level === "campaign")!.id,
         adsetTemplateId: adsetTemplate!.id,
       })),
