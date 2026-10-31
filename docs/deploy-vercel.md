@@ -184,3 +184,55 @@ days, so new columns have history:
 - Pause, activate and edit budgets from the **Ads** page; every change is logged under
   each item's **History**.
 - **Settings → Kill switch** stops all background work at once if you ever need it.
+
+## Turning on launching (with Cloudflare R2 for big videos)
+
+Vercel can't take files over about 4.5 MB and Supabase's free plan caps files at 50 MB,
+so creatives go straight from your browser to Cloudflare R2 (free up to 10 GB). Meta then
+pulls each file from a private link that expires after an hour.
+
+### 1. Cloudflare R2 (about 10 minutes)
+
+1. dash.cloudflare.com → sign up → left menu **R2 Object Storage**. Cloudflare asks for a
+   card to turn R2 on; the first 10 GB per month are free.
+2. **Create bucket** → name `fahd-creatives` → location **Automatic** → **Create bucket**.
+3. In the bucket: **Settings → CORS policy → Add CORS policy**, paste this with your
+   Vercel address, and save:
+
+   ```json
+   [{ "AllowedOrigins": ["https://YOUR-ADDRESS.vercel.app"], "AllowedMethods": ["PUT", "GET", "HEAD"], "AllowedHeaders": ["content-type"], "ExposeHeaders": ["ETag"], "MaxAgeSeconds": 3600 }]
+   ```
+
+4. Back on **R2 Object Storage** → **API** (or **Manage API tokens**) → **Create API token**:
+   - Permissions: **Object Read & Write**.
+   - Specify bucket: **fahd-creatives**.
+   - **Create**. Copy the **Access Key ID**, the **Secret Access Key** (shown once) and the
+     **S3 endpoint** (`https://<account id>.r2.cloudflarestorage.com`).
+
+### 2. Vercel variables
+
+Settings → Environment Variables → add (paste into the first Key box):
+
+```
+NEXT_PUBLIC_LAUNCH_FEATURES=1
+STORAGE_DRIVER=s3
+S3_ENDPOINT=https://YOUR-ACCOUNT-ID.r2.cloudflarestorage.com
+S3_BUCKET=fahd-creatives
+S3_ACCESS_KEY_ID=your-access-key-id
+S3_SECRET_ACCESS_KEY=your-secret-access-key
+```
+
+Then **Deployments → ⋯ → Redeploy**. The menu now shows Launch, Creatives, Copy,
+Presets and Launch log.
+
+### 3. In the app
+
+1. **Settings → Ad accounts**: turn on **Launches enabled** for each account → **Save**.
+2. **Presets**: add your brand, then a preset per market (ad account, page, Instagram,
+   pixel, link). Use **Test preset**; every line should be green.
+3. **Launch** → pick the preset → follow the five steps → **Create paused**. The launch
+   log fills in live; big launches run in steps of about 40 seconds until done.
+4. Check the campaign in Ads Manager, then **Activate all** from the launch log.
+
+Meta allows at most 50 ads per ad set: for bigger launches pick **One ad set per angle**
+or **N ads per ad set** in Structure.

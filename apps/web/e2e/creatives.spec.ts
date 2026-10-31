@@ -65,6 +65,9 @@ test("uploads pair by file name, dedupe, and go to a Meta account (week 3 checks
   await expect(page.getByRole("heading", { name: "teaser" })).toBeVisible();
   await page.getByLabel("Upload to ad account").selectOption({ label: "Lumen US" });
   await page.getByRole("button", { name: "Upload to Meta" }).click();
+  // Without a worker the app doesn't wait for Meta to process a video; pressing again checks it.
+  await expect(page.getByText("Sent to Meta: 0 ready, 1 still processing.")).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Upload to Meta" }).click();
   await expect(page.getByText("Uploaded to Meta: 1 ready.")).toBeVisible({ timeout: 30_000 });
   const lumen = page.getByRole("listitem").filter({ hasText: "Lumen US" });
   await expect(lumen.getByText("Ready")).toBeVisible();

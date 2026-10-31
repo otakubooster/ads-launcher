@@ -77,6 +77,9 @@ export type PlanContext = {
   cloneAdset?: { metaId: string; name: string } | null;
 };
 
+/** Meta's hard limit on ads in one ad set. */
+export const MAX_ADS_PER_ADSET = 50;
+
 export type PlanIssue = { level: "error" | "warning"; message: string };
 
 export type PlannedAd = {
@@ -229,7 +232,11 @@ export function buildPlan(draft: LaunchDraft, ctx: PlanContext): LaunchPlan {
   }
 
   const ads = adsets.reduce((n, a) => n + a.ads.length, 0);
-  if (ads > 0 && adsets.some((a) => a.ads.length > 50)) issues.push({ level: "warning", message: "Ad sets with more than 50 ads are hard for Meta to optimise." });
+  // Meta refuses a 51st ad in an ad set.
+  for (const a of adsets.filter((x) => x.ads.length > MAX_ADS_PER_ADSET)) {
+    a.issues.push({ level: "error", message: `${a.ads.length} ads: Meta allows at most ${MAX_ADS_PER_ADSET} per ad set. Group by angle, or use "N ads per ad set".` });
+  }
+  if (adsets.some((a) => a.ads.length > MAX_ADS_PER_ADSET)) issues.push({ level: "error", message: `An ad set has more than ${MAX_ADS_PER_ADSET} ads. Change the grouping in Structure.` });
   const dailyBudget = campaign.dailyBudget ?? adsets.reduce((sum, a) => sum + (a.dailyBudget ?? 0), 0);
   return { campaign, adsets, totals: { ads, adsets: adsets.length, dailyBudget }, issues };
 }

@@ -26,6 +26,8 @@ export const launches = pgTable(
     status: launchStatus("status").notNull().default("draft"),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    /** A step runner holds the launch until then, so two steps never overlap. */
+    leaseUntil: timestamp("lease_until", { withTimezone: true }),
   },
   (t) => [
     index("launches_created_idx").on(t.createdAt.desc()),

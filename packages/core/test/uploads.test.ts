@@ -9,8 +9,10 @@ import { FAKE_BUSINESS_ID, createFakeGraph } from "@fahd/meta/testing";
 import { encryptToken } from "@fahd/shared";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { storageFromEnv, syncConnectionAssets, uploadCreativeToAccount } from "../src";
+import { storageFromEnv, syncConnectionAssets, uploadCreativeToAccount, type UploadResult } from "../src";
 
+/** Tests below wait for processing, so results are always ready. */
+const up = async (...args: Parameters<typeof uploadCreativeToAccount>) => (await uploadCreativeToAccount(...args)) as Extract<UploadResult, { status: "ready" }>;
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
 let accountId: string;
@@ -52,7 +54,7 @@ const fast = { pollMs: 1, sleep: async () => {} };
 describe("uploadCreativeToAccount", () => {
   it("uploads image bytes, stores the hash and reuses it next time", async () => {
     const c = await addCreative("hero_4x5.jpg", "image", randomBytes(200_000));
-    const first = await uploadCreativeToAccount(db, storageFromEnv(), c.id, accountId, fast);
+    const first = await up(db, storageFromEnv(), c.id, accountId, fast);
     expect(first).toMatchObject({ status: "ready", reused: false });
     expect(first.imageHash).toMatch(/^[0-9a-f]{32}$/);
     expect(await uploadCreativeToAccount(db, storageFromEnv(), c.id, accountId, fast)).toMatchObject({ reused: true, imageHash: first.imageHash });
@@ -60,7 +62,7 @@ describe("uploadCreativeToAccount", () => {
 
   it("streams a large video in Meta's chunks, waits for processing and keeps the thumbnail", async () => {
     const c = await addCreative("hook3_9x16.mp4", "video", Buffer.alloc(120 * MB, 7));
-    const res = await uploadCreativeToAccount(db, storageFromEnv(), c.id, accountId, fast);
+    const res = await up(db, storageFromEnv(), c.id, accountId, fast);
     expect(res.status).toBe("ready");
     expect(res.thumbnailUrl).toMatch(/^data:image\/svg/);
     const video = fake.objects.get(res.videoId!)!;
@@ -69,12 +71,20 @@ describe("uploadCreativeToAccount", () => {
     expect(row).toMatchObject({ status: "ready", videoId: res.videoId });
   }, 60_000);
 
+  it("without waiting, reports a video as processing and finishes it on the next call", async () => {
+    const c = await addCreative("hook4_9x16.mp4", "video", Buffer.alloc(2 * MB, 3));
+    const first = await uploadCreativeToAccount(db, storageFromEnv(), c.id, accountId, { ...fast, noWait: true });
+    expect(first.status).toBe("processing");
+    const second = await uploadCreativeToAccount(db, storageFromEnv(), c.id, accountId, { ...fast, noWait: true });
+    expect(second).toMatchObject({ status: "ready", reused: false });
+  });
+
   it("dedupes identical bytes by sha256 within an account", async () => {
     const sha = randomBytes(32).toString("hex");
     const a = await addCreative("dup_9x16.jpg", "image", randomBytes(1000), sha);
-    const first = await uploadCreativeToAccount(db, storageFromEnv(), a.id, accountId, fast);
+    const first = await up(db, storageFromEnv(), a.id, accountId, fast);
     const [b] = await db.insert(creatives).values({ ...a, id: undefined, storagePath: `${a.storagePath}.copy`, brandId: (await db.select().from(brands))[1]!.id }).returning();
-    const second = await uploadCreativeToAccount(db, storageFromEnv(), b!.id, accountId, fast);
+    const second = await up(db, storageFromEnv(), b!.id, accountId, fast);
     expect(second).toMatchObject({ reused: true, imageHash: first.imageHash });
   });
 

@@ -10,7 +10,7 @@ import { encryptToken } from "@fahd/shared";
 import { EMPTY_DRAFT, buildPlan, type LaunchDraft } from "@fahd/shared/launch-plan";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { activateLaunch, createLaunchItems, resetFailedItems, runLaunch, storageFromEnv, syncConnectionAssets } from "../src";
+import { acquireLaunchLease, activateLaunch, createLaunchItems, releaseLaunchLease, resetFailedItems, runLaunch, storageFromEnv, syncConnectionAssets } from "../src";
 
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -184,10 +184,41 @@ describe("runLaunch", () => {
   it("stops at the kill switch and leaves the rest pending", async () => {
     const { launchId } = await newLaunch({ ...draft(), creatives: { groups: groups.slice(0, 3) } });
     let checks = 0;
-    // Trips after the media and the campaign: ad sets never start.
-    const result = await runLaunch(db, storageFromEnv(), launchId, { ...fast, shouldStop: async () => ++checks > 7 });
+    // Media is already in the account; trips after the first ad set: ads never start.
+    const result = await runLaunch(db, storageFromEnv(), launchId, { ...fast, shouldStop: async () => ++checks > 1 });
     expect(result.status).toBe("stopped");
     const items = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId));
     expect(items.some((i) => i.status === "pending")).toBe(true);
+  });
+
+  it("finishes in short steps (Vercel), checking processing videos between steps, without duplicates", async () => {
+    const before = { adsets: objects("adset").length, ads: objects("ad").length };
+    // Fresh videos, so this run uploads them and Meta "processes" them between steps.
+    const [brand] = await db.select().from(brands).where(eq(brands.name, "Lumen"));
+    const fresh = [];
+    for (const key of ["step-a", "step-b"]) {
+      fresh.push({ key, creativeIds: [await addVideo(brand!.id, `${key}_9x16.mp4`, "9:16"), await addVideo(brand!.id, `${key}_4x5.mp4`, "4:5")], angle: "steps", hook: key, format: "ugc" });
+    }
+    const { launchId, plan } = await newLaunch({ ...draft(), creatives: { groups: fresh } });
+    let result: Awaited<ReturnType<typeof runLaunch>> | undefined;
+    let steps = 0;
+    // A deadline already passed: each step does one unit of work and hands over.
+    do {
+      result = await runLaunch(db, storageFromEnv(), launchId, { ...fast, deadline: Date.now() });
+      steps++;
+    } while (result.status === "running" && steps < 200);
+    expect(result.status).toBe("done");
+    expect(steps).toBeGreaterThan(3);
+    expect(objects("adset").length - before.adsets).toBe(plan.adsets.length);
+    expect(objects("ad").length - before.ads).toBe(plan.totals.ads);
+  }, 60_000);
+
+  it("lets only one step hold a launch at a time", async () => {
+    const { launchId } = await newLaunch({ ...draft(), creatives: { groups: groups.slice(0, 1) } });
+    expect(await acquireLaunchLease(db, launchId, 60)).toBe(true);
+    expect(await acquireLaunchLease(db, launchId, 60)).toBe(false);
+    await releaseLaunchLease(db, launchId);
+    expect(await acquireLaunchLease(db, launchId, 60)).toBe(true);
+    await releaseLaunchLease(db, launchId);
   });
 });
