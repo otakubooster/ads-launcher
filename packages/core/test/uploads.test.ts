@@ -79,6 +79,16 @@ describe("uploadCreativeToAccount", () => {
     expect(second).toMatchObject({ status: "ready", reused: false });
   });
 
+  it("re-checks a ready video saved without a thumbnail instead of using it", async () => {
+    const c = await addCreative("hook5_9x16.mp4", "video", Buffer.alloc(1 * MB, 5));
+    const first = await up(db, storageFromEnv(), c.id, accountId, fast);
+    // An older row: ready, but Meta hadn't made thumbnails yet.
+    await db.update(creativeUploads).set({ thumbnailUrl: null }).where(and(eq(creativeUploads.creativeId, c.id), eq(creativeUploads.adAccountId, accountId)));
+    const again = await up(db, storageFromEnv(), c.id, accountId, fast);
+    expect(again).toMatchObject({ status: "ready", videoId: first.videoId, reused: false });
+    expect(again.thumbnailUrl).toMatch(/^data:image\/svg/);
+  });
+
   it("dedupes identical bytes by sha256 within an account", async () => {
     const sha = randomBytes(32).toString("hex");
     const a = await addCreative("dup_9x16.jpg", "image", randomBytes(1000), sha);

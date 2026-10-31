@@ -40,7 +40,8 @@ export async function uploadCreativeToAccount(db: AnyDb, storage: Storage, creat
     .select()
     .from(creativeUploads)
     .where(and(eq(creativeUploads.creativeId, creativeId), eq(creativeUploads.adAccountId, adAccountId)));
-  if (existing?.status === "ready") {
+  // A ready video without a thumbnail (saved before thumbnails existed) is checked again below.
+  if (existing?.status === "ready" && !(existing.videoId && !existing.thumbnailUrl)) {
     return { status: "ready", imageHash: existing.imageHash, videoId: existing.videoId, thumbnailUrl: existing.thumbnailUrl, reused: true };
   }
 
@@ -74,17 +75,28 @@ export async function uploadCreativeToAccount(db: AnyDb, storage: Storage, creat
     if (status?.video_status !== "ready") return null;
     const thumbs = await client.get<{ data: { uri: string; is_preferred?: boolean }[] }>(`${videoId}/thumbnails`, {}, options);
     const thumbnailUrl = (thumbs.data.find((t) => t.is_preferred) ?? thumbs.data[0])?.uri ?? null;
+    // Meta can say "ready" before it has made thumbnails, and video ads need one: wait for it.
+    if (!thumbnailUrl) return null;
     await setRow({ status: "ready", videoId, thumbnailUrl });
     return { status: "ready", imageHash: null, videoId, thumbnailUrl, reused: false };
   };
 
   try {
-    // A video an earlier call left processing: check it instead of uploading again.
-    if (existing?.status === "processing" && existing.videoId) {
-      if (Date.now() - existing.updatedAt.getTime() > timeoutMs) throw new Error("Meta did not finish processing the video within 20 minutes");
-      const done = await checkVideo(existing.videoId);
-      if (done) return done;
-      if (opts.noWait) return { status: "processing", videoId: existing.videoId };
+    // A video an earlier call left processing (or ready without a thumbnail): check it instead of uploading again.
+    if ((existing?.status === "processing" || existing?.status === "ready") && existing.videoId) {
+      const videoId = existing.videoId;
+      let deadline = existing.updatedAt.getTime() + timeoutMs;
+      if (existing.status === "ready") {
+        await setRow({ status: "processing", videoId });
+        deadline = Date.now() + timeoutMs;
+      } else if (Date.now() > deadline) throw new Error("Meta did not finish processing the video within 20 minutes");
+      for (;;) {
+        const done = await checkVideo(videoId);
+        if (done) return done;
+        if (opts.noWait) return { status: "processing", videoId };
+        if (Date.now() > deadline) throw new Error("Meta did not finish processing the video within 20 minutes");
+        await sleep(pollMs);
+      }
     }
     await setRow({ status: "uploading" });
     if (creative.kind === "image") {
