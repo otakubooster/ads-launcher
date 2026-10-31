@@ -169,11 +169,35 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
     router.replace(`${pathname}?${next}`, { scroll: false });
   }, [ownParam, selectionKey, searchParams, router, pathname]);
 
+  // Built from the live selection, not the URL: a tab clicked right after ticking a row
+  // must not lose it while router.replace above is still in flight.
   const tabHref = (param: string) => {
     const next = new URLSearchParams(searchParams);
+    if (ownParam && (searchParams.get(ownParam) ?? "") !== selectionKey) {
+      if (selectionKey) next.set(ownParam, selectionKey);
+      else next.delete(ownParam);
+      if (ownParam === "campaigns") next.delete("adsets");
+    }
     next.set("level", param);
     return `${pathname}?${next}`;
   };
+
+  // Ads Manager: a campaign's name opens its ad sets, an ad set's name its ads.
+  const onDrill = React.useCallback(
+    (r: TableRow) => {
+      const next = new URLSearchParams(searchParams);
+      if (r.level === "campaign") {
+        next.set("campaigns", r.id);
+        next.delete("adsets");
+        next.set("level", "adsets");
+      } else {
+        next.set("adsets", r.id);
+        next.set("level", "ads");
+      }
+      router.push(`${pathname}?${next}`, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
 
   const selectRange = (toId: string) => {
     const from = lastClicked.current;
@@ -458,6 +482,7 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
               }}
               onToggle={onToggle}
               onOpen={(r) => setDrawerId(r.id)}
+              onDrill={onDrill}
               onBudget={(row, el) => setBudgetEdit({ row, rect: el.getBoundingClientRect() })}
               onSelectRange={selectRange}
               onDuplicate={canEdit ? onDuplicateRow : undefined}
