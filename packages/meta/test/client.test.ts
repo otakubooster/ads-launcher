@@ -282,6 +282,8 @@ describe("describeMetaError for blocked apps", () => {
   it("explains Meta's (#200) API access blocked as an app restriction", () => {
     const err = new MetaApiError({ kind: "permission", code: 200, message: "(#200) API access blocked." });
     expect(describeMetaError(err).title).toBe("Meta blocked API access for your app");
+    const traced = new MetaApiError({ kind: "permission", code: 200, subcode: 1815694, fbtraceId: "AbC123", message: "(#200) API access blocked." });
+    expect(describeMetaError(traced).detail).toContain("error 200/1815694, trace AbC123");
     expect(describeMetaError(new MetaApiError({ kind: "permission", code: 200, message: "(#200) Requires ads_management permission" })).title).toBe("Missing permission on Meta");
   });
 });

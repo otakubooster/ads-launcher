@@ -153,7 +153,7 @@ export function describeMetaError(err: MetaApiError): { title: string; detail: s
       if (/api access blocked/i.test(`${err.message} ${err.userMessage ?? ""}`))
         return {
           title: "Meta blocked API access for your app",
-          detail: "Meta answered \"API access blocked\": it has restricted the Meta app (or its business), so every request is refused, not just one ad account.",
+          detail: `Meta answered "API access blocked": it has restricted the Meta app (or its business), so every request is refused, not just one ad account.${err.fbtraceId ? ` Meta reference: error ${err.code ?? 200}${err.subcode ? `/${err.subcode}` : ""}, trace ${err.fbtraceId}.` : ""}`,
           fix: "Open developers.facebook.com → your app → Dashboard and App Review → Requests for a restriction notice, make sure the app is Live, and check Business Settings → Business info and Account Quality for a restriction. Once Meta lifts it, press Refresh.",
         };
       return {
