@@ -184,7 +184,8 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
         <ul className="overflow-hidden rounded-card border border-slate-6" aria-label="Launch items">
           {rows.map(({ item: i, creative }) => {
             const isFailed = i.status === "failed" || creative?.status === "failed";
-            const message = i.errorMessage ?? (creative?.status === "failed" ? creative.errorMessage : null);
+            // A failed creative explains its ad's failure better than "Skipped".
+            const message = creative?.status === "failed" && creative.errorMessage ? creative.errorMessage : i.errorMessage;
             return (
               <li key={i.id} className={cn("border-b border-slate-6 py-2 pr-3 last:border-0", isFailed && "bg-red-2")}>
                 <div className="flex min-h-6 items-center gap-2 text-ui" style={{ paddingLeft: 12 + DEPTH[i.level] * 24 }}>

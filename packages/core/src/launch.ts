@@ -2,7 +2,7 @@ import { adAccounts, adsetTemplates, changeLog, creativeUploads, creatives, laun
 import type { AdsetTemplateSpec } from "@fahd/db/schema";
 import { MetaApiError, describeMetaError, setStatus, type BatchRequest, type MetaClient, type Params } from "@fahd/meta";
 import type { AdCreativeSettings, AdsetSettings, CampaignSettings, CopyBlock, LaunchDraft, LaunchPlan, Placement } from "@fahd/shared/launch-plan";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { ALERTS, sendAlert } from "./alerts";
 import { markConnectionBroken } from "./connections";
 import { killSwitchState } from "./guardrails";
@@ -91,7 +91,10 @@ export function buildCreativeParams(input: {
 }): Params {
   const params: Params = { name: input.name };
   if (input.urlTags) params.url_tags = input.urlTags;
-  const featureSpec = Object.fromEntries(Object.entries(input.features).map(([k, v]) => [k, { enroll_status: v }]));
+  // Image-only features on a video creative (and video-only on an image) are refused by Meta.
+  const isVideo = input.files.some((f) => f.kind === "video");
+  const applies = (k: string) => (isVideo ? !k.startsWith("image_") : !k.startsWith("video_"));
+  const featureSpec = Object.fromEntries(Object.entries(input.features).filter(([k]) => input.postId || applies(k)).map(([k, v]) => [k, { enroll_status: v }]));
   if (Object.keys(featureSpec).length) params.degrees_of_freedom_spec = { creative_features_spec: featureSpec };
 
   if (input.postId) {
@@ -116,11 +119,11 @@ export function buildCreativeParams(input: {
   }
 
   const media = byPlacement ? [vertical!, feed!] : [input.files.find((f) => f.ratio === "4:5") ?? input.files[0]!];
-  const isVideo = media[0]!.kind === "video";
+  const mediaIsVideo = media[0]!.kind === "video";
   const label = (f: CreativeFile) => ({ name: LABELS[f.ratio ?? ""] ?? "r45" });
   params.object_story_spec = identity;
   params.asset_feed_spec = {
-    ...(isVideo
+    ...(mediaIsVideo
       ? { videos: media.map((f) => ({ video_id: f.videoId, thumbnail_url: f.thumbnailUrl, adlabels: [label(f)] })) }
       : { images: media.map((f) => ({ hash: f.imageHash, adlabels: [label(f)] })) }),
     bodies: c.primaryTexts.map((text) => ({ text })),
@@ -128,18 +131,18 @@ export function buildCreativeParams(input: {
     descriptions: c.descriptions.map((text) => ({ text })),
     link_urls: [{ website_url: c.link, ...(input.displayLink ? { display_url: input.displayLink } : {}) }],
     call_to_action_types: [c.cta],
-    ad_formats: [isVideo ? "SINGLE_VIDEO" : "SINGLE_IMAGE"],
+    ad_formats: [mediaIsVideo ? "SINGLE_VIDEO" : "SINGLE_IMAGE"],
     ...(byPlacement
       ? {
           asset_customization_rules: [
             {
               customization_spec: { publisher_platforms: ["facebook", "instagram"], facebook_positions: ["story", "facebook_reels"], instagram_positions: ["story", "reels"] },
-              [isVideo ? "video_label" : "image_label"]: label(vertical!),
+              [mediaIsVideo ? "video_label" : "image_label"]: label(vertical!),
               priority: 1,
             },
             {
               customization_spec: { publisher_platforms: ["facebook", "instagram"], facebook_positions: ["feed", "marketplace", "video_feeds", "search"], instagram_positions: ["stream", "explore", "profile_feed"] },
-              [isVideo ? "video_label" : "image_label"]: label(feed!),
+              [mediaIsVideo ? "video_label" : "image_label"]: label(feed!),
               priority: 2,
             },
           ],
@@ -354,7 +357,15 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
           .select({ id: creatives.id, ratio: creatives.ratio, kind: creatives.kind, imageHash: creativeUploads.imageHash, videoId: creativeUploads.videoId, thumbnailUrl: creativeUploads.thumbnailUrl })
           .from(creativeUploads)
           .innerJoin(creatives, eq(creatives.id, creativeUploads.creativeId))
-          .where(and(eq(creativeUploads.adAccountId, account!.id), eq(creativeUploads.status, "ready"), inArray(creativeUploads.creativeId, needed)))
+          .where(
+            and(
+              eq(creativeUploads.adAccountId, account!.id),
+              eq(creativeUploads.status, "ready"),
+              inArray(creativeUploads.creativeId, needed),
+              // Videos need a thumbnail; one saved without goes back through the upload check.
+              or(isNotNull(creativeUploads.imageHash), isNotNull(creativeUploads.thumbnailUrl)),
+            ),
+          )
       : [];
     for (const r of ready) uploaded.set(r.id, { ratio: r.ratio, kind: r.kind, imageHash: r.imageHash, videoId: r.videoId, thumbnailUrl: r.thumbnailUrl });
     for (const creativeId of needed) {

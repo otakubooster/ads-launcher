@@ -115,7 +115,8 @@ describe("runLaunch", () => {
       ["r916", ["story", "reels"]],
       ["r45", ["stream", "explore", "profile_feed"]],
     ]);
-    expect(creative.degrees_of_freedom_spec).toEqual({ creative_features_spec: { image_touchups: { enroll_status: "OPT_IN" }, text_optimizations: { enroll_status: "OPT_OUT" } } });
+    // Video creatives don't get image-only features (image_touchups), which Meta refuses on videos.
+    expect(creative.degrees_of_freedom_spec).toEqual({ creative_features_spec: { text_optimizations: { enroll_status: "OPT_OUT" } } });
     expect(creative.object_story_spec).toEqual({ page_id: "300000000000001", instagram_user_id: "400000000000001" });
   });
 
