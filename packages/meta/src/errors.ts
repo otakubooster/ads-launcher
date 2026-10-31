@@ -149,6 +149,13 @@ export function describeMetaError(err: MetaApiError): { title: string; detail: s
         fix: "Generate a new system user token and use Replace token in Settings → Meta connections.",
       };
     case "permission":
+      // (#200) "API access blocked": Meta restricted the app itself, not one asset.
+      if (/api access blocked/i.test(`${err.message} ${err.userMessage ?? ""}`))
+        return {
+          title: "Meta blocked API access for your app",
+          detail: "Meta answered \"API access blocked\": it has restricted the Meta app (or its business), so every request is refused, not just one ad account.",
+          fix: "Open developers.facebook.com → your app → Dashboard and App Review → Requests for a restriction notice, make sure the app is Live, and check Business Settings → Business info and Account Quality for a restriction. Once Meta lifts it, press Refresh.",
+        };
       return {
         title: "Missing permission on Meta",
         detail: err.userMessage ?? err.message,

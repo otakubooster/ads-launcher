@@ -277,3 +277,11 @@ describe("batch", () => {
     expect(err.kind).toBe("guard");
   });
 });
+
+describe("describeMetaError for blocked apps", () => {
+  it("explains Meta's (#200) API access blocked as an app restriction", () => {
+    const err = new MetaApiError({ kind: "permission", code: 200, message: "(#200) API access blocked." });
+    expect(describeMetaError(err).title).toBe("Meta blocked API access for your app");
+    expect(describeMetaError(new MetaApiError({ kind: "permission", code: 200, message: "(#200) Requires ads_management permission" })).title).toBe("Missing permission on Meta");
+  });
+});
