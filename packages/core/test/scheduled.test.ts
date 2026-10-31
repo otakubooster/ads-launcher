@@ -38,3 +38,30 @@ describe("scheduledSync", () => {
     await setKillSwitch(db, false, owner!.id);
   });
 });
+
+describe("fetchReach", () => {
+  it("asks Meta for unique reach per campaign and for the whole account", async () => {
+    const { adAccounts } = await import("@fahd/db/schema");
+    const { fetchReach } = await import("../src");
+    const [account] = await db.select().from(adAccounts).where(eq(adAccounts.metaId, "act_200000000000001"));
+    const today = new Date().toISOString().slice(0, 10);
+    const byCampaign = await fetchReach(db, account!.id, "campaign", { since: today, until: today });
+    const total = await fetchReach(db, account!.id, "account", { since: today, until: today });
+    expect(Object.keys(byCampaign).length).toBeGreaterThan(0);
+    expect(Object.values(byCampaign).every((n) => n > 0)).toBe(true);
+    expect(total["act_200000000000001"]).toBeGreaterThan(0);
+  });
+});
+
+describe("backfill", () => {
+  it("re-pulls the last 30 days with the new metrics", async () => {
+    const { insightsDaily } = await import("@fahd/db/schema");
+    const { sql } = await import("drizzle-orm");
+    const result = await scheduledSync(db, "backfill", 30);
+    expect(result).toMatchObject({ accounts: 3, failed: [], days: 30 });
+    const [row] = await db.select({ days: sql<number>`count(distinct ${insightsDaily.date})::int`, carts: sql<number>`sum(${insightsDaily.addToCart})::int`, results: sql<number>`sum(${insightsDaily.results})::int` }).from(insightsDaily);
+    expect(row!.days).toBe(30);
+    expect(row!.carts).toBeGreaterThan(0);
+    expect(row!.results).toBeGreaterThan(0);
+  });
+});

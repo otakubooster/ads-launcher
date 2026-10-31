@@ -64,6 +64,8 @@ type StatusFilter = keyof typeof STATUS_FILTERS;
 type Props = {
   level: Level;
   rows: AdsRow[];
+  /** Unique people across the accounts in view, from Meta; null when unknown. */
+  totalReach?: number | null;
   budgets: AccountBudgets;
   views: SavedView[];
   canEdit: boolean;
@@ -74,7 +76,7 @@ type Props = {
   initialOpenId?: string;
 };
 
-export function AdsView({ level, rows: initialRows, budgets, views, canEdit, range, parentSelection, hasAccounts, initialOpenId }: Props) {
+export function AdsView({ level, rows: initialRows, totalReach = null, budgets, views, canEdit, range, parentSelection, hasAccounts, initialOpenId }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -88,8 +90,8 @@ export function AdsView({ level, rows: initialRows, budgets, views, canEdit, ran
 
   const [search, setSearch] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
-  const [preset, setPreset] = React.useState<PresetId>("performance");
-  const [columns, setColumns] = React.useState<ColumnId[]>(PRESETS.performance);
+  const [preset, setPreset] = React.useState<PresetId>("adsManager");
+  const [columns, setColumns] = React.useState<ColumnId[]>(PRESETS.adsManager);
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [density, setDensity] = React.useState<keyof typeof ROW_HEIGHT>("comfortable");
   const ownSelection = level === "campaign" ? parentSelection.campaignIds : level === "adset" ? parentSelection.adsetIds : [];
@@ -224,7 +226,7 @@ export function AdsView({ level, rows: initialRows, budgets, views, canEdit, ran
 
   function applyView(v: SavedView) {
     const cols = v.columns.filter((c): c is ColumnId => (ALL_COLUMNS as string[]).includes(c));
-    setColumns(cols.length ? cols : PRESETS.performance);
+    setColumns(cols.length ? cols : PRESETS.adsManager);
     setPreset((v.filters.preset as PresetId) ?? "custom");
     setStatusFilter((v.filters.status as StatusFilter) ?? "all");
     setSearch(String(v.filters.search ?? ""));
@@ -338,7 +340,7 @@ export function AdsView({ level, rows: initialRows, budgets, views, canEdit, ran
                   if (v !== "custom") setColumns(PRESETS[v as keyof typeof PRESETS]);
                 }}
               >
-                {(["performance", "creative", "delivery"] as const).map((p) => (
+                {(["adsManager", "performance", "creative", "delivery"] as const).map((p) => (
                   <DropdownMenuRadioItem key={p} value={p}>
                     {PRESET_LABELS[p]}
                   </DropdownMenuRadioItem>
@@ -443,6 +445,7 @@ export function AdsView({ level, rows: initialRows, budgets, views, canEdit, ran
               onBudget={(row, el) => setBudgetEdit({ row, rect: el.getBoundingClientRect() })}
               onSelectRange={selectRange}
               scrollRef={scrollRef}
+              totalReach={totalReach}
             />
           </div>
           <MobileCards rows={table.getRowModel().rows.map((r) => r.original)} canEdit={canEdit} onToggle={onToggle} onOpen={(r) => setDrawerId(r.id)} />

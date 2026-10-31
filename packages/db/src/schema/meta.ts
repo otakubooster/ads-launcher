@@ -156,6 +156,12 @@ export const insightsDaily = pgTable(
     purchaseValue: money("purchase_value").notNull().default(0),
     video3sPlays: money("video_3s_plays").notNull().default(0),
     thruplays: money("thruplays").notNull().default(0),
+    addToCart: integer("add_to_cart").notNull().default(0),
+    checkouts: integer("checkouts").notNull().default(0),
+    /** Count of the ad set's optimization event (Ads Manager's "Results"). */
+    results: integer("results").notNull().default(0),
+    /** Every action Meta reported that day, action_type → count, for columns added later. */
+    actions: jsonb("actions").$type<Record<string, number>>().notNull().default({}),
   },
   (t) => [unique("insights_daily_ad_date").on(t.adId, t.date), index("insights_daily_date_idx").on(t.date), membersCanRead()],
 );

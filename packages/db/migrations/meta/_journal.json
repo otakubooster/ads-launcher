@@ -64,6 +64,13 @@
       "when": 1793376792474,
       "tag": "0008_guardrails_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793392394592,
+      "tag": "0009_insights_more_metrics",
+      "breakpoints": true
     }
   ]
 }

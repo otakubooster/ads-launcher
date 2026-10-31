@@ -28,6 +28,7 @@ type Props = {
   onBudget: (row: TableRow, anchor: HTMLElement) => void;
   onSelectRange: (toId: string) => boolean;
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  totalReach?: number | null;
 };
 
 function adsManagerUrl(r: TableRow) {
@@ -35,7 +36,7 @@ function adsManagerUrl(r: TableRow) {
   return `https://adsmanager.facebook.com/adsmanager/manage/${tab}?selected_${r.level}_ids=${r.metaId}`;
 }
 
-export function AdsTable({ table, density, canEdit, activeId, onActivate, onToggle, onOpen, onBudget, onSelectRange, scrollRef }: Props) {
+export function AdsTable({ table, density, canEdit, activeId, onActivate, onToggle, onOpen, onBudget, onSelectRange, scrollRef, totalReach = null }: Props) {
   const rows = table.getRowModel().rows;
   const rowHeight = ROW_HEIGHT[density];
 
@@ -59,8 +60,10 @@ export function AdsTable({ table, density, canEdit, activeId, onActivate, onTogg
     const data = rows.map((r) => r.original);
     const counts = sumCounts(data);
     const currencies = new Set(data.map((r) => r.currency));
-    return { counts, ratios: ratios(counts), currency: currencies.size === 1 ? [...currencies][0]! : null, n: data.length };
-  }, [rows]);
+    // Account reach only describes the whole view; a filtered subset has no total reach.
+    const reach = rows.length === table.getCoreRowModel().rows.length ? totalReach : null;
+    return { counts, ratios: ratios(counts), currency: currencies.size === 1 ? [...currencies][0]! : null, n: data.length, reach };
+  }, [rows, table, totalReach]);
 
   const columnKey = visible.map((c) => `${c.id}:${c.getSize()}`).join(",");
 
@@ -183,7 +186,7 @@ export function AdsTable({ table, density, canEdit, activeId, onActivate, onTogg
   );
 }
 
-function totalCell(id: string, t: { counts: ReturnType<typeof sumCounts>; ratios: ReturnType<typeof ratios>; currency: string | null }) {
+function totalCell(id: string, t: { counts: ReturnType<typeof sumCounts>; ratios: ReturnType<typeof ratios>; currency: string | null; reach: number | null }) {
   const money = (v: number | null) => (v === null ? EMPTY : t.currency ? formatMoney(Math.round(v), t.currency) : "Mixed");
   switch (id) {
     case "spend":
@@ -208,6 +211,20 @@ function totalCell(id: string, t: { counts: ReturnType<typeof sumCounts>; ratios
       return formatPercent(t.ratios.hookRate);
     case "holdRate":
       return formatPercent(t.ratios.holdRate);
+    case "results":
+      return formatNumber(t.counts.results);
+    case "costPerResult":
+      return money(t.ratios.costPerResult);
+    case "cpc":
+      return money(t.ratios.cpc);
+    case "addToCart":
+      return formatNumber(t.counts.addToCart);
+    case "checkouts":
+      return formatNumber(t.counts.checkouts);
+    case "reach":
+      return t.reach === null ? EMPTY : formatNumber(t.reach);
+    case "frequency":
+      return t.reach ? (t.counts.impressions / t.reach).toFixed(2) : EMPTY;
     default:
       return "";
   }
@@ -345,9 +362,19 @@ const BodyRow = React.memo(function BodyRow({ row, selected, active, rowHeight, 
             </td>
           );
         }
+        const sub = def?.sub?.(r);
         return (
           <td key={cell.id} className={cn(base, (id === "account" || id === "parent") && "max-w-0 truncate text-slate-11")}>
-            {def ? def.format(r) : flexRender(cell.column.columnDef.cell, cell.getContext())}
+            {sub ? (
+              <span className="flex flex-col leading-4">
+                <span>{def!.format(r)}</span>
+                <span className="truncate text-label text-slate-11">{sub}</span>
+              </span>
+            ) : def ? (
+              def.format(r)
+            ) : (
+              flexRender(cell.column.columnDef.cell, cell.getContext())
+            )}
           </td>
         );
       })}

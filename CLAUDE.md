@@ -172,3 +172,11 @@ everything created paused. Screens checked in light and dark against the spec.
   drizzle.config.ts turns the pooler's 6543 URL into the 5432 session URL for them.
   OWNER_EMAIL bootstraps the first owner on first Supabase sign-in. Guide: docs/deploy-vercel.md.
 - requireSession() calls connection() so signed-in pages are never prerendered.
+- Ads Manager columns: insights_daily also stores add_to_cart, checkouts, results (count of
+  the ad set's optimization event, resultType() in @fahd/shared/meta-options) and every
+  action in `actions` jsonb. Insights use use_unified_attribution_setting so numbers follow
+  each ad set's attribution, like Ads Manager. Reach is unique per range, so it's fetched
+  live per account × level × range (core fetchReach, cached 15 min in lib/server/reach.ts);
+  frequency = impressions ÷ reach. Ends / Attribution setting / Bid strategy come from the
+  mirror's raw JSON. Default column set is "Ads Manager" (PRESETS.adsManager).
+- /api/cron/sync?mode=backfill&days=30 re-pulls history after metrics are added.

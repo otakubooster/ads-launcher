@@ -165,7 +165,7 @@ export async function loadDashboard(userId: string, filters: Filters): Promise<D
   const accounts = data.accounts.map((a) => {
     const today = todayIn(a.timezone);
     const rows = data.daily.filter((r) => r.ad_account_id === a.id && r.date === today);
-    const c = sumCounts(rows.map((r) => ({ spend: r.spend, impressions: r.impressions, clicks: r.clicks, purchases: r.purchases, purchaseValue: r.purchase_value, video3sPlays: r.video_3s_plays, thruplays: r.thruplays })));
+    const c = sumCounts(rows.map((r) => ({ spend: r.spend, impressions: r.impressions, clicks: r.clicks, purchases: r.purchases, purchaseValue: r.purchase_value, video3sPlays: r.video_3s_plays, thruplays: r.thruplays, addToCart: 0, checkouts: 0, results: 0 })));
     const rr = ratios(c);
     return { id: a.id, name: a.name, currency: a.currency, status: a.status, todaySpend: c.spend, todayCpa: rr.cpa, todayRoas: rr.roas, activeAds: a.active_ads };
   });
