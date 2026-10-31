@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { LaunchBuilder } from "@/components/launch/builder";
+import { DeleteDraftButton } from "@/components/launch/delete-draft-button";
 import { DesktopOnly } from "@/components/launch/desktop-only";
 import { PageHeader } from "@/components/page-header";
 import { requireSession } from "@/lib/server/auth";
@@ -29,7 +30,11 @@ export default async function LaunchDraftPage({ params }: { params: Promise<{ dr
 
   return (
     <>
-      <PageHeader title={data.launch.name} description={`${data.preset.brandName} · ${data.preset.market} · everything is created paused`} />
+      <PageHeader
+        title={data.launch.name}
+        description={`${data.preset.brandName} · ${data.preset.market} · everything is created paused`}
+        actions={<DeleteDraftButton id={data.launch.id} name={data.launch.name} after="launch" withLabel />}
+      />
       {/* A preset switch rewrites the draft on the server: remount with it. */}
       <DesktopOnly>
         <LaunchBuilder key={data.launch.presetId} data={data} library={library.items} role={session.role} />

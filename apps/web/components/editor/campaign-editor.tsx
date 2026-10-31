@@ -10,6 +10,7 @@ import { formatMoney } from "@/lib/format";
 import { publishEditor, saveEditor } from "@/app/(app)/create/actions";
 import { UploadDialog } from "@/components/creatives/creatives-view";
 import { LibraryPicker, libraryGroups, type LibraryGroup } from "@/components/launch/creatives-step";
+import { DeleteDraftButton } from "@/components/launch/delete-draft-button";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
 import type { CreativeItem } from "@/lib/server/creatives";
@@ -32,6 +33,8 @@ export function CampaignEditor({ data, library }: { data: EditorData; library: C
   const [uploadFor, setUploadFor] = React.useState<{ s: string; a: string } | null>(null);
   const dirty = React.useRef(false);
   const version = React.useRef(0);
+  // Set when the draft is being deleted, so a pending autosave doesn't report "Not saved".
+  const deleted = React.useRef(false);
   const { defaults, account } = data;
   const currency = account.currency;
 
@@ -48,7 +51,9 @@ export function CampaignEditor({ data, library }: { data: EditorData; library: C
     if (!dirty.current) return;
     const v = version.current;
     const t = setTimeout(async () => {
+      if (deleted.current) return;
       const res = await saveEditor(data.launch.id, doc);
+      if (deleted.current) return;
       // A newer edit is still on its way: its own save sets the state.
       if (v !== version.current) return;
       setSave(res.ok ? "saved" : "error");
@@ -200,7 +205,10 @@ export function CampaignEditor({ data, library }: { data: EditorData; library: C
           </Link>
         </Button>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-body font-semibold">{doc.campaign.name || "New campaign"}</p>
+          <div className="flex min-w-0 items-center gap-1">
+            <p className="truncate text-body font-semibold">{doc.campaign.name || "New campaign"}</p>
+            <DeleteDraftButton id={data.launch.id} name={doc.campaign.name} after="launch" onDeleting={() => (deleted.current = true)} />
+          </div>
           <p className="truncate text-label text-slate-11">
             {account.name} · Sales · {doc.adsets.length} {doc.adsets.length === 1 ? "ad set" : "ad sets"} · {adCount} {adCount === 1 ? "ad" : "ads"}
             {daily > 0 && ` · ${formatMoney(daily, currency)}/day`}

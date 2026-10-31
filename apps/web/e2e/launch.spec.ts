@@ -242,3 +242,31 @@ test("the Ads Manager-style editor creates a campaign with ad sets and ads, dupl
   const creatives = (await fakeObjects()).filter((o) => o.type === "adcreative") as unknown as { object_story_spec?: { link_data?: { message?: string } } }[];
   expect(creatives.some((c) => c.object_story_spec?.link_data?.message === "Glow in 7 days.")).toBe(true);
 });
+
+test("drafts delete from the list and from the editor, next to the name", async ({ page }) => {
+  test.setTimeout(120_000);
+  await signIn(page, "Fahd");
+  const newDraft = async (name: string) => {
+    await page.goto("/launch");
+    await page.getByLabel("Preset", { exact: true }).selectOption({ label: "Lumen · CA · en" });
+    await page.getByRole("button", { name: "Create campaign" }).click();
+    await page.waitForURL(/\/create\/[0-9a-f-]{36}$/);
+    await page.getByRole("textbox", { name: "Campaign name" }).fill(name);
+    await expect(page.getByText("Draft saved")).toBeVisible();
+  };
+
+  // From the editor's top bar.
+  await newDraft("E2E delete in editor");
+  await page.getByRole("button", { name: "Delete draft E2E delete in editor" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete draft" }).click();
+  await page.waitForURL(/\/launch$/);
+  await expect(page.getByRole("link", { name: /E2E delete in editor/ })).toHaveCount(0);
+
+  // From the drafts list.
+  await newDraft("E2E delete in list");
+  await page.goto("/launch");
+  await page.getByRole("button", { name: "Delete draft E2E delete in list" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete draft" }).click();
+  await expect(page.getByText("Draft deleted")).toBeVisible();
+  await expect(page.getByRole("link", { name: /E2E delete in list/ })).toHaveCount(0);
+});
