@@ -4,6 +4,7 @@ import { REQUIRED_PERMISSIONS } from "@fahd/meta";
 import { asc, count, desc, eq } from "drizzle-orm";
 import { PageHeader } from "@/components/page-header";
 import { requireSession } from "@/lib/server/auth";
+import { appVersion } from "@/lib/version";
 import { asUser } from "@/lib/server/db";
 import { AccountsSection, ConnectionsSection, KillSwitchSection, SettingsNav, TeamSection, UsageSection } from "./sections";
 
@@ -11,6 +12,7 @@ export const metadata: Metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
   const session = await requireSession();
+  const version = appVersion();
   const data = await asUser(session.userId, async (tx) => {
     const connections = await tx
       .select({
@@ -44,7 +46,15 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" description="Meta connections, guardrails, team and API usage." />
+      <PageHeader
+        title="Settings"
+        description="Meta connections, guardrails, team and API usage."
+        actions={
+          <span className="font-mono text-label text-slate-11" title={version.message || undefined}>
+            Version {version.commit}
+          </span>
+        }
+      />
       <div className="grid gap-8 lg:grid-cols-[180px_minmax(0,1fr)]">
         <SettingsNav />
         <div className="grid max-w-4xl min-w-0 gap-6">
