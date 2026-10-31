@@ -4,6 +4,7 @@ import Link from "next/link";
 import { brands, launches, presets, users } from "@fahd/db/schema";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { EmptyState } from "@/components/empty-state";
+import { DeleteDraftButton } from "@/components/launch/delete-draft-button";
 import { DesktopOnly } from "@/components/launch/desktop-only";
 import { NewLaunch } from "@/components/launch/new-launch";
 import { PageHeader } from "@/components/page-header";
@@ -71,8 +72,8 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
           ) : (
             <ul className="overflow-hidden rounded-card border border-slate-6">
               {data.drafts.map((d) => (
-                <li key={d.id} className="border-b border-slate-6 last:border-0">
-                  <Link href={d.editor ? `/create/${d.id}` : `/launch/${d.id}`} className="flex h-10 items-center gap-3 px-3 text-ui hover:bg-slate-2">
+                <li key={d.id} className="flex items-center border-b border-slate-6 pr-1.5 last:border-0 hover:bg-slate-2">
+                  <Link href={d.editor ? `/create/${d.id}` : `/launch/${d.id}`} className="flex h-10 min-w-0 flex-1 items-center gap-3 px-3 text-ui">
                     <span className="min-w-0 flex-1 truncate font-medium">{d.name}</span>
                     <span className="text-label text-slate-11">{d.editor ? "Campaign" : "Bulk launch"}</span>
                     <span className="text-slate-11">
@@ -82,6 +83,7 @@ export default async function LaunchPage({ searchParams }: { searchParams: Promi
                       {d.by} · <TimeAgo iso={d.updatedAt.toISOString()} />
                     </span>
                   </Link>
+                  {canLaunch && <DeleteDraftButton id={d.id} name={d.name} />}
                 </li>
               ))}
             </ul>
