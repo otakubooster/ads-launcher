@@ -25,6 +25,8 @@ type Props = {
   onActivate: (id: string) => void;
   onToggle: (row: TableRow, on: boolean) => void;
   onOpen: (row: TableRow) => void;
+  /** Clicking a campaign or ad set name opens its children, like Ads Manager. Ads open details. */
+  onDrill?: (row: TableRow) => void;
   onBudget: (row: TableRow, anchor: HTMLElement) => void;
   onSelectRange: (toId: string) => boolean;
   /** Ads Manager's Duplicate for one row; omitted for viewers. */
@@ -40,7 +42,7 @@ function adsManagerUrl(r: TableRow) {
   return `https://adsmanager.facebook.com/adsmanager/manage/${tab}?selected_${r.level}_ids=${r.metaId}`;
 }
 
-export function AdsTable({ table, density, canEdit, activeId, onActivate, onToggle, onOpen, onBudget, onSelectRange, onDuplicate, onEdit, scrollRef, totalReach = null }: Props) {
+export function AdsTable({ table, density, canEdit, activeId, onActivate, onToggle, onOpen, onBudget, onSelectRange, onDuplicate, onEdit, onDrill, scrollRef, totalReach = null }: Props) {
   const rows = table.getRowModel().rows;
   const rowHeight = ROW_HEIGHT[density];
 
@@ -156,6 +158,7 @@ export function AdsTable({ table, density, canEdit, activeId, onActivate, onTogg
                 onActivate={onActivate}
                 onToggle={onToggle}
                 onOpen={onOpen}
+                onDrill={onDrill}
                 onBudget={onBudget}
                 onSelectRange={onSelectRange}
                 onDuplicate={onDuplicate}
@@ -265,10 +268,10 @@ type BodyRowProps = {
   selected: boolean;
   active: boolean;
   rowHeight: number;
-} & Pick<Props, "canEdit" | "onActivate" | "onToggle" | "onOpen" | "onBudget" | "onSelectRange" | "onDuplicate" | "onEdit">;
+} & Pick<Props, "canEdit" | "onActivate" | "onToggle" | "onOpen" | "onBudget" | "onSelectRange" | "onDuplicate" | "onEdit" | "onDrill">;
 
 /** Memoized so scrolling only renders rows entering the viewport. */
-const BodyRow = React.memo(function BodyRow({ row, selected, active, rowHeight, canEdit, onActivate, onToggle, onOpen, onBudget, onSelectRange, onDuplicate, onEdit }: BodyRowProps) {
+const BodyRow = React.memo(function BodyRow({ row, selected, active, rowHeight, canEdit, onActivate, onToggle, onOpen, onBudget, onSelectRange, onDuplicate, onEdit, onDrill }: BodyRowProps) {
   const r = row.original;
   return (
     <tr
@@ -322,7 +325,12 @@ const BodyRow = React.memo(function BodyRow({ row, selected, active, rowHeight, 
                   ) : (
                     <span className="size-6 shrink-0 rounded-xs bg-slate-3" />
                   ))}
-                <button type="button" onClick={(e) => (e.stopPropagation(), onOpen(r))} className="min-w-0 truncate text-left font-medium hover:underline">
+                <button
+                  type="button"
+                  title={onDrill && r.level !== "ad" ? `Show ${r.level === "campaign" ? "ad sets" : "ads"} in ${r.name}` : undefined}
+                  onClick={(e) => (e.stopPropagation(), onDrill && r.level !== "ad" ? onDrill(r) : onOpen(r))}
+                  className="min-w-0 truncate text-left font-medium hover:underline"
+                >
                   {r.name}
                 </button>
                 <span className="ml-auto hidden shrink-0 items-center gap-0.5 group-hover/row:flex group-focus-within/row:flex">

@@ -21,6 +21,30 @@ test("campaigns sync and selecting one filters the ad sets", async ({ page }) =>
   await expect(page.locator("tfoot")).toContainText("Total · 2 rows");
 });
 
+test("a tab clicked right after ticking a campaign keeps the selection", async ({ page }) => {
+  const table = page.getByRole("region", { name: "Ads table" });
+  await table.getByRole("checkbox", { name: "Select Lumen_US_Prospecting" }).check();
+  // No wait for the URL: the tab link must already carry the selection.
+  await page.getByRole("link", { name: /^Ad sets/ }).click();
+  await expect(page).toHaveURL(/level=adsets/);
+  await expect(page.locator("tfoot")).toContainText("Total · 2 rows");
+});
+
+test("clicking a campaign name opens its ad sets, and an ad set name its ads, like Ads Manager", async ({ page }) => {
+  const table = page.getByRole("region", { name: "Ads table" });
+  await table.getByRole("button", { name: "Lumen_US_Prospecting", exact: true }).click();
+  await expect(page).toHaveURL(/level=adsets/);
+  await expect(page.getByText("1 campaign selected")).toBeVisible();
+  await expect(page.locator("tfoot")).toContainText("Total · 2 rows");
+  await expect(table.getByRole("button", { name: "Lumen_US_glow_1", exact: true })).toBeVisible();
+  await expect(table.getByRole("button", { name: "Lumen_US_glow_3", exact: true })).toHaveCount(0);
+
+  await table.getByRole("button", { name: "Lumen_US_glow_1", exact: true }).click();
+  await expect(page).toHaveURL(/level=ads/);
+  await expect(page.getByText("1 ad set selected")).toBeVisible();
+  await expect(page.locator("tfoot")).toContainText("Total · 3 rows");
+});
+
 test("pausing applies at once with undo, and is logged", async ({ page }) => {
   await page.goto("/ads?level=ads");
   const toggle = page.getByRole("switch", { name: /^Pause hook1_ugc_1/ }).first();
@@ -52,7 +76,9 @@ test("inline budget edit updates Meta and shows the account total", async ({ pag
 });
 
 test("the detail drawer shows KPIs, settings and history", async ({ page }) => {
-  await page.getByRole("region", { name: "Ads table" }).getByRole("button", { name: "Lumen_US_Prospecting", exact: true }).click();
+  const row = page.getByRole("region", { name: "Ads table" }).getByRole("row", { name: /Lumen_US_Prospecting/ }).first();
+  await row.hover();
+  await row.getByRole("button", { name: "Open details" }).click();
   const drawer = page.getByRole("dialog");
   await expect(drawer.getByText("Hook rate")).toBeVisible();
   await expect(drawer.getByText("Daily spend · ROAS")).toBeVisible();
