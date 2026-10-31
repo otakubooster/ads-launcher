@@ -287,3 +287,11 @@ describe("describeMetaError for blocked apps", () => {
     expect(describeMetaError(new MetaApiError({ kind: "permission", code: 200, message: "(#200) Requires ads_management permission" })).title).toBe("Missing permission on Meta");
   });
 });
+
+describe("describeMetaError for apps in Development mode", () => {
+  it("tells people to switch the app to Live", () => {
+    const err = new MetaApiError({ kind: "validation", code: 100, subcode: 1885183, message: "Ads creative post was created by an app that is in development mode. It must be in public to create this ad." });
+    expect(describeMetaError(err).title).toBe("Your Meta app is still in Development mode");
+    expect(describeMetaError(err).fix).toContain("switch App Mode to Live");
+  });
+});

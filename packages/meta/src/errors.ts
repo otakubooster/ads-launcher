@@ -125,6 +125,13 @@ export function describeMetaError(err: MetaApiError): { title: string; detail: s
   const minutes = err.retryAfterMs ? Math.max(1, Math.ceil(err.retryAfterMs / 60_000)) : null;
   switch (err.kind) {
     case "validation":
+      // Creatives made by an app in Development mode can't run as ads (subcode 1885183).
+      if (/development mode/i.test(`${err.message} ${err.userMessage ?? ""}`))
+        return {
+          title: "Your Meta app is still in Development mode",
+          detail: "Meta only creates ads from creatives made by an app that is Live.",
+          fix: "In developers.facebook.com → your app, switch App Mode to Live (it asks for a Privacy Policy URL: use your app's /privacy page, and /data-deletion for data deletion). Then press Retry failed items.",
+        };
       return {
         title: err.userTitle ?? "Meta rejected a setting",
         detail: err.userMessage ?? err.message,
