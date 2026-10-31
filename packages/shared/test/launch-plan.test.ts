@@ -82,3 +82,21 @@ describe("buildPlan", () => {
     expect(planHasErrors(plan)).toBe(false);
   });
 });
+
+describe("Meta's 50 ads per ad set", () => {
+  it("is an error for an all-in-one launch of 60, and fine split 30 per ad set", async () => {
+    const { buildPlan, planHasErrors, EMPTY_DRAFT } = await import("../src/launch-plan");
+    const creatives: Record<string, { ratio: string; kind: "image"; fileName: string }> = {};
+    const groups = Array.from({ length: 60 }, (_, i) => {
+      creatives[`c${i}`] = { ratio: "4:5", kind: "image", fileName: `img${i}_4x5.jpg` };
+      return { key: `img${i}`, creativeIds: [`c${i}`] };
+    });
+    const draft = { ...EMPTY_DRAFT, destination: { ...EMPTY_DRAFT.destination, dailyBudget: 10000 }, creatives: { groups }, copy: { ...EMPTY_DRAFT.copy, primaryTexts: ["Hi"], link: "https://x.test" } };
+    const ctx = { brand: "B", market: "US", date: "2026-10-31", currency: "USD", creatives };
+    const allInOne = buildPlan({ ...draft, structure: { ...draft.structure, grouping: "all_in_one" } }, ctx);
+    expect(planHasErrors(allInOne)).toBe(true);
+    const split = buildPlan({ ...draft, structure: { ...draft.structure, grouping: "n_per_adset", perAdset: 30 } }, ctx);
+    expect(split.adsets).toHaveLength(2);
+    expect(planHasErrors(split)).toBe(false);
+  });
+});

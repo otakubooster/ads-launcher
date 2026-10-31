@@ -71,6 +71,13 @@
       "when": 1793392394592,
       "tag": "0009_insights_more_metrics",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793409114143,
+      "tag": "0010_launch_lease",
+      "breakpoints": true
     }
   ]
 }

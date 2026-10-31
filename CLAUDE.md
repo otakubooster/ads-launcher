@@ -180,3 +180,9 @@ everything created paused. Screens checked in light and dark against the spec.
   frequency = impressions ÷ reach. Ends / Attribution setting / Bid strategy come from the
   mirror's raw JSON. Default column set is "Ads Manager" (PRESETS.adsManager).
 - /api/cron/sync?mode=backfill&days=30 re-pulls history after metrics are added.
+- Launching on Vercel: storage driver "s3" (packages/core/src/storage.ts, SigV4 presign, no SDK)
+  for R2. runLaunch({ deadline }) yields "running" when out of time (first unit always runs;
+  ready uploads load without counting); videos use uploadCreativeToAccount({ noWait }) and are
+  re-checked next step. /api/launch/step runs ~40 s per call under a lease
+  (launches.lease_until), then calls itself; kickLaunch() starts it (inline without
+  CRON_SECRET); the cron resumes stalledLaunches(). Plans error above 50 ads per ad set.

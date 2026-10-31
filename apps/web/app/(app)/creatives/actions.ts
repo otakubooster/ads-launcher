@@ -133,8 +133,16 @@ export async function uploadToAccounts(creativeIds: string[], adAccountIds: stri
       for (const a of input.accounts) for (const c of input.creatives) await queues.add({ kind: "upload", adAccountId: a, creativeId: c }, c);
       return { ok: true, message: `Queued ${input.creatives.length * input.accounts.length} uploads to Meta.` };
     }
-    for (const a of input.accounts) for (const c of input.creatives) await uploadCreativeToAccount(getDb(), storageFromEnv(), c, a);
+    // No worker (Vercel): send everything, but don't wait for Meta to process videos;
+    // the launch (or the next press) picks them up when they're ready.
+    let processing = 0;
+    for (const a of input.accounts) {
+      for (const c of input.creatives) {
+        if ((await uploadCreativeToAccount(getDb(), storageFromEnv(), c, a, { noWait: true })).status === "processing") processing++;
+      }
+    }
     revalidatePath("/creatives");
-    return { ok: true, message: `Uploaded to Meta: ${input.creatives.length * input.accounts.length} ready.` };
+    const total = input.creatives.length * input.accounts.length;
+    return { ok: true, message: processing ? `Sent to Meta: ${total - processing} ready, ${processing} still processing.` : `Uploaded to Meta: ${total} ready.` };
   });
 }

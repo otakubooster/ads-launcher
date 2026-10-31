@@ -12,9 +12,16 @@ export type UploadOptions = {
   pollMs?: number;
   /** Give up on processing after this long (spec: 20 min). */
   timeoutMs?: number;
+  /**
+   * Don't wait for Meta to process a video: check once and report "processing".
+   * For hosts that cut requests short (Vercel); the next call checks again.
+   */
+  noWait?: boolean;
 };
 
-export type UploadResult = { status: "ready"; imageHash: string | null; videoId: string | null; thumbnailUrl: string | null; reused: boolean };
+export type UploadResult =
+  | { status: "ready"; imageHash: string | null; videoId: string | null; thumbnailUrl: string | null; reused: boolean }
+  | { status: "processing"; videoId: string };
 
 /**
  * Puts one creative into one ad account's media library (docs/spec.md → Media
@@ -60,7 +67,25 @@ export async function uploadCreativeToAccount(db: AnyDb, storage: Storage, creat
     : await clientForAdAccount(db, adAccountId);
   const options = { accountId: metaAccountId };
 
+  /** Ready (with the preferred thumbnail), still processing, or an error. */
+  const checkVideo = async (videoId: string): Promise<UploadResult | null> => {
+    const { status } = await client.get<{ status?: { video_status?: string } }>(videoId, { fields: "status" }, options);
+    if (status?.video_status === "error") throw new Error("Meta could not process this video");
+    if (status?.video_status !== "ready") return null;
+    const thumbs = await client.get<{ data: { uri: string; is_preferred?: boolean }[] }>(`${videoId}/thumbnails`, {}, options);
+    const thumbnailUrl = (thumbs.data.find((t) => t.is_preferred) ?? thumbs.data[0])?.uri ?? null;
+    await setRow({ status: "ready", videoId, thumbnailUrl });
+    return { status: "ready", imageHash: null, videoId, thumbnailUrl, reused: false };
+  };
+
   try {
+    // A video an earlier call left processing: check it instead of uploading again.
+    if (existing?.status === "processing" && existing.videoId) {
+      if (Date.now() - existing.updatedAt.getTime() > timeoutMs) throw new Error("Meta did not finish processing the video within 20 minutes");
+      const done = await checkVideo(existing.videoId);
+      if (done) return done;
+      if (opts.noWait) return { status: "processing", videoId: existing.videoId };
+    }
     await setRow({ status: "uploading" });
     if (creative.kind === "image") {
       const bytes = await storage.readAll(creative.storagePath);
@@ -84,16 +109,12 @@ export async function uploadCreativeToAccount(db: AnyDb, storage: Storage, creat
 
     const deadline = Date.now() + timeoutMs;
     for (;;) {
-      const { status } = await client.get<{ status?: { video_status?: string } }>(videoId, { fields: "status" }, options);
-      if (status?.video_status === "ready") break;
-      if (status?.video_status === "error") throw new Error("Meta could not process this video");
+      const done = await checkVideo(videoId);
+      if (done) return done;
+      if (opts.noWait) return { status: "processing", videoId };
       if (Date.now() > deadline) throw new Error("Meta did not finish processing the video within 20 minutes");
       await sleep(pollMs);
     }
-    const thumbs = await client.get<{ data: { uri: string; is_preferred?: boolean }[] }>(`${videoId}/thumbnails`, {}, options);
-    const thumbnailUrl = (thumbs.data.find((t) => t.is_preferred) ?? thumbs.data[0])?.uri ?? null;
-    await setRow({ status: "ready", videoId, thumbnailUrl });
-    return { status: "ready", imageHash: null, videoId, thumbnailUrl, reused: false };
   } catch (e) {
     const message = e instanceof MetaApiError ? `${describeMetaError(e).title}: ${describeMetaError(e).detail}` : e instanceof Error ? e.message : String(e);
     await setRow({ status: "error", error: message.slice(0, 500) });

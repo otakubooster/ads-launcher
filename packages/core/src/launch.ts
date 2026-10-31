@@ -1,8 +1,8 @@
-import { adAccounts, adsetTemplates, changeLog, creatives, launchItems, launches, metaAds, metaAdsets, metaCampaigns, presets } from "@fahd/db/schema";
+import { adAccounts, adsetTemplates, changeLog, creativeUploads, creatives, launchItems, launches, metaAds, metaAdsets, metaCampaigns, presets } from "@fahd/db/schema";
 import type { AdsetTemplateSpec } from "@fahd/db/schema";
 import { MetaApiError, describeMetaError, setStatus, type BatchRequest, type MetaClient, type Params } from "@fahd/meta";
 import type { CopyBlock, LaunchDraft, LaunchPlan } from "@fahd/shared/launch-plan";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { ALERTS, sendAlert } from "./alerts";
 import { markConnectionBroken } from "./connections";
 import { killSwitchState } from "./guardrails";
@@ -149,10 +149,22 @@ export function buildCreativeParams(input: {
 
 // --- Runner -------------------------------------------------------------------
 
-export type RunOptions = { upload?: UploadOptions; client?: MetaClient; shouldStop?: () => Promise<boolean> };
-export type RunResult = { status: "done" | "partial" | "failed" | "stopped"; created: number; failed: number };
+export type RunOptions = {
+  upload?: UploadOptions;
+  client?: MetaClient;
+  shouldStop?: () => Promise<boolean>;
+  /**
+   * Epoch ms to hand over by (hosts that cut requests short, like Vercel). The run
+   * saves its place and returns "running"; the next call continues, and videos
+   * still processing on Meta are checked again then instead of waited for.
+   */
+  deadline?: number;
+};
+export type RunResult = { status: "done" | "partial" | "failed" | "stopped" | "running"; created: number; failed: number };
 
 class StopLaunch extends Error {}
+/** Out of time for this step; everything done so far is saved. */
+class Yield extends Error {}
 
 /**
  * Creates a launch on Meta (docs/spec.md → launch runner): uploads media, then
@@ -175,6 +187,12 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
 
   // The kill switch stops inline runs too, not only the worker's.
   const shouldStop = opts.shouldStop ?? (async () => (await killSwitchState(db)).on);
+  // The first unit of work always runs, so every step makes progress.
+  let units = 0;
+  const checkpoint = async () => {
+    if (await shouldStop()) throw new StopLaunch("Kill switch");
+    if (units++ > 0 && opts.deadline && Date.now() > opts.deadline) throw new Yield();
+  };
   const startedAt = launch.startedAt ?? new Date();
   await db.update(launches).set({ status: "running", startedAt }).where(eq(launches.id, launchId));
   const { client, metaAccountId } = opts.client ? { client: opts.client, metaAccountId: account!.metaId } : await clientForAdAccount(db, account!.id);
@@ -242,10 +260,25 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
     const needed = [...new Set(creativeItems.flatMap((i) => (i.payload as CreativePayload).postId ? [] : (i.payload as CreativePayload).creativeIds))];
     const uploaded = new Map<string, CreativeFile>();
     const uploadErrors = new Map<string, unknown>();
+    let processing = 0;
+    // Files already in this account's library cost nothing: load them without a checkpoint.
+    const ready = needed.length
+      ? await db
+          .select({ id: creatives.id, ratio: creatives.ratio, kind: creatives.kind, imageHash: creativeUploads.imageHash, videoId: creativeUploads.videoId, thumbnailUrl: creativeUploads.thumbnailUrl })
+          .from(creativeUploads)
+          .innerJoin(creatives, eq(creatives.id, creativeUploads.creativeId))
+          .where(and(eq(creativeUploads.adAccountId, account!.id), eq(creativeUploads.status, "ready"), inArray(creativeUploads.creativeId, needed)))
+      : [];
+    for (const r of ready) uploaded.set(r.id, { ratio: r.ratio, kind: r.kind, imageHash: r.imageHash, videoId: r.videoId, thumbnailUrl: r.thumbnailUrl });
     for (const creativeId of needed) {
-      if (await shouldStop()) throw new StopLaunch("Kill switch");
+      if (uploaded.has(creativeId)) continue;
+      await checkpoint();
       try {
-        const res = await uploadCreativeToAccount(db, storage, creativeId, account!.id, opts.upload);
+        const res = await uploadCreativeToAccount(db, storage, creativeId, account!.id, { ...opts.upload, noWait: opts.deadline !== undefined });
+        if (res.status === "processing") {
+          processing++;
+          continue;
+        }
         const [row] = await db.select({ ratio: creatives.ratio, kind: creatives.kind }).from(creatives).where(eq(creatives.id, creativeId));
         uploaded.set(creativeId, { ratio: row?.ratio ?? null, kind: row?.kind ?? "image", imageHash: res.imageHash, videoId: res.videoId, thumbnailUrl: res.thumbnailUrl });
       } catch (e) {
@@ -253,6 +286,9 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
         uploadErrors.set(creativeId, e);
       }
     }
+
+    // Ads need every file ready; videos Meta is still processing are checked next step.
+    if (processing > 0) throw new Yield();
 
     // 2. Campaign.
     const campaignItem = items.find((i) => i.level === "campaign")!;
@@ -286,7 +322,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
     // 3. Ad sets.
     for (const adsetItem of items.filter((i) => i.level === "adset")) {
       if (adsetItem.status === "done" || adsetItem.status === "failed") continue;
-      if (await shouldStop()) throw new StopLaunch("Kill switch");
+      await checkpoint();
       const campaign = byId.get(adsetItem.parentItemId!)!;
       if (!campaign.metaId) continue;
       const p = adsetItem.payload as AdsetPayload;
@@ -355,7 +391,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
       }
 
       for (let start = 0; start < ready.length; start += 25) {
-        if (await shouldStop()) throw new StopLaunch("Kill switch");
+        await checkpoint();
         const slice = ready.slice(start, start + 25);
         // An ambiguous earlier attempt may have created some ads: adopt those by name.
         const todo: typeof slice = [];
@@ -432,6 +468,10 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
     if (e instanceof StopLaunch) {
       const result = await finish(db, launchId, true);
       return { ...result, status: e.message === "Kill switch" ? "stopped" : result.status };
+    }
+    if (e instanceof Yield) {
+      const now = await db.select({ status: launchItems.status }).from(launchItems).where(eq(launchItems.launchId, launchId));
+      return { status: "running", created: now.filter((i) => i.status === "done").length, failed: now.filter((i) => i.status === "failed").length };
     }
     throw e;
   }
@@ -526,4 +566,36 @@ export async function destinationContext(db: AnyDb, draft: LaunchDraft) {
     existingAdsets: adsets,
     cloneAdset: clone ?? null,
   };
+}
+
+/**
+ * Takes the launch for one step (Vercel runs), or returns false when another step
+ * holds it. Expires on its own, so a step that dies never blocks the launch.
+ */
+export async function acquireLaunchLease(db: AnyDb, launchId: string, seconds: number) {
+  const rows = await db
+    .update(launches)
+    .set({ leaseUntil: sql`now() + make_interval(secs => ${seconds})` })
+    .where(and(eq(launches.id, launchId), sql`(${launches.leaseUntil} is null or ${launches.leaseUntil} < now())`))
+    .returning({ id: launches.id });
+  return rows.length > 0;
+}
+
+export async function releaseLaunchLease(db: AnyDb, launchId: string) {
+  await db.update(launches).set({ leaseUntil: null }).where(eq(launches.id, launchId));
+}
+
+/** Launches whose runner stopped mid-way (a step died or a chain broke): resume them. */
+export async function stalledLaunches(db: AnyDb, idleSeconds = 120) {
+  const rows = await db
+    .select({ id: launches.id })
+    .from(launches)
+    .where(
+      and(
+        inArray(launches.status, ["queued", "running"]),
+        sql`(${launches.leaseUntil} is null or ${launches.leaseUntil} < now())`,
+        sql`coalesce((select max(li.updated_at) from launch_items li where li.launch_id = ${launches.id}), ${launches.updatedAt}) < now() - make_interval(secs => ${idleSeconds})`,
+      ),
+    );
+  return rows.map((r) => r.id);
 }

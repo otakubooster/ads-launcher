@@ -1,18 +1,18 @@
 "use server";
 
-import { checkSpend, createLaunchItems, runLaunch, storageFromEnv } from "@fahd/core";
+import { checkSpend, createLaunchItems } from "@fahd/core";
 import { adAccounts, launches, presets } from "@fahd/db/schema";
 import { buildPlan, planHasErrors, type LaunchDraft } from "@fahd/shared/launch-plan";
 import { and, eq } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { after } from "next/server";
 import { z } from "zod";
 import { type ActionResult, UserError, runAction } from "@/lib/server/action-result";
 import { requireRole } from "@/lib/server/auth";
 import { asUser, getDb } from "@/lib/server/db";
 import { GuardrailError, assertNotKilled } from "@/lib/server/guard";
 import { draftFromPreset, planContext } from "@/lib/server/launch";
+import { kickLaunch } from "@/lib/server/launch-runner";
 import { getQueues } from "@/lib/server/queue";
 
 const EDITORS = ["owner", "admin", "buyer"] as const;
@@ -95,7 +95,7 @@ export async function submitLaunch(id: string, { activate = false }: { activate?
 
     const queues = getQueues();
     if (queues) await queues.add({ kind: "launch", adAccountId: plan.adAccountId, launchId }, launchId);
-    else after(() => runLaunch(getDb(), storageFromEnv(), launchId).catch((e) => console.error("launch failed", e)));
+    else await kickLaunch(launchId);
     return { ok: true };
   });
   if (result.ok) redirect(`/launches/${id}`);
