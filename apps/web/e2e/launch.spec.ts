@@ -1,4 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
+import postgres from "postgres";
+import { E2E_ENV } from "../playwright.config";
 import { GRAPH, ensureConnected, fakeObjects, makeImage, signIn, syncNow } from "./helpers";
 
 // The second test launches the creatives the first one uploads.
@@ -269,4 +271,37 @@ test("drafts delete from the list and from the editor, next to the name", async 
   await page.getByRole("dialog").getByRole("button", { name: "Delete draft" }).click();
   await expect(page.getByText("Draft deleted")).toBeVisible();
   await expect(page.getByRole("link", { name: /E2E delete in list/ })).toHaveCount(0);
+});
+
+test("a launch drops an Advantage+ feature Meta refuses and still creates every ad (stepped runner)", async ({ page }) => {
+  test.setTimeout(180_000);
+  // The preset turns "Enhance CTA" on, and Meta (the fake) refuses that key, like it refused "music".
+  const sql = postgres(E2E_ENV.DATABASE_URL, { max: 1, onnotice: () => {} });
+  await sql`update presets set creative_features = creative_features || '{"enhance_cta":"OPT_IN"}'::jsonb where market = 'CA'`;
+  await sql.end();
+  await fetch(`${GRAPH}/__fake/refuse-feature`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "enhance_cta" }) });
+
+  await signIn(page, "Fahd");
+  await page.goto("/launch");
+  await page.getByLabel("Preset", { exact: true }).selectOption({ label: "Lumen · CA · en" });
+  await page.getByRole("button", { name: "Bulk launch" }).click();
+  await page.waitForURL(/\/launch\/[0-9a-f-]{36}$/);
+  await page.getByLabel("Launch name").fill("E2E refused feature");
+  await page.getByLabel("Daily budget").fill("30");
+  await page.getByRole("button", { name: "Next: Creatives" }).click();
+  await page.getByRole("button", { name: "Pick from library" }).first().click();
+  await page.getByRole("dialog").getByLabel("Select e2eglow").check();
+  await page.getByRole("dialog").getByRole("button", { name: "Add 1 creative" }).click();
+  await page.getByRole("button", { name: "Next: Copy" }).click();
+  await page.getByLabel("Primary text 1").fill("Wake up glowing.");
+  await expect(page.getByText("Draft saved")).toBeVisible();
+  const before = new Set((await fakeObjects()).map((o) => o.id));
+  await page.getByRole("button", { name: "Review launch" }).click();
+  await page.getByRole("button", { name: "Create paused" }).click();
+  await page.waitForURL(/\/launches\/[0-9a-f-]{36}$/);
+  await expect(page.getByTestId("launch-status")).toHaveText("Done", { timeout: 60_000 });
+
+  const creatives = (await fakeObjects()).filter((o) => !before.has(o.id) && o.type === "adcreative") as unknown as { degrees_of_freedom_spec?: { creative_features_spec?: Record<string, unknown> } }[];
+  expect(creatives).toHaveLength(1);
+  expect(Object.keys(creatives[0]!.degrees_of_freedom_spec?.creative_features_spec ?? {})).not.toContain("enhance_cta");
 });
