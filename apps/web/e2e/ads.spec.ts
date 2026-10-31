@@ -83,3 +83,29 @@ test("the Ads Manager column set shows results, reach, frequency, settings and f
   await expect(row.getByRole("cell").nth(8)).not.toHaveText("—");
   await expect(page.locator("tfoot")).not.toContainText("NaN");
 });
+
+test("Duplicate works like Ads Manager: ad sets into the original campaign, an ad into another ad set, all paused", async ({ page }) => {
+  await page.goto("/ads?level=adsets");
+  const table = page.getByRole("region", { name: "Ads table" });
+  await table.getByRole("checkbox", { name: "Select Lumen_UK_glow_1" }).check();
+  await page.getByRole("toolbar", { name: "Bulk actions" }).getByRole("button", { name: "Duplicate" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Duplicate ad set")).toBeVisible();
+  await expect(dialog.getByLabel("Original campaign")).toBeChecked();
+  await dialog.getByLabel("Number of copies").fill("2");
+  await dialog.getByRole("button", { name: "Duplicate" }).click();
+  await expect(page.getByText("Created 2 copies, paused.")).toBeVisible({ timeout: 30_000 });
+  await expect(table.getByRole("row", { name: /Lumen_UK_glow_1 - Copy/ })).toHaveCount(2);
+  const copies = (await fakeObjects()).filter((o) => o.type === "adset" && o.name === "Lumen_UK_glow_1 - Copy");
+  expect(copies.map((c) => c.status)).toEqual(["PAUSED", "PAUSED"]);
+
+  await page.goto("/ads?level=ads");
+  const ad = table.getByRole("row", { name: /hook2_ugc_2/ }).first();
+  await ad.hover();
+  await ad.getByRole("button", { name: "Duplicate" }).click();
+  await dialog.getByLabel("Existing ad set").check();
+  await dialog.getByLabel("Choose ad set").selectOption({ index: 1 });
+  await dialog.getByRole("button", { name: "Duplicate" }).click();
+  await expect(page.getByText("Created 1 copy, paused.")).toBeVisible({ timeout: 30_000 });
+  expect((await fakeObjects()).filter((o) => o.type === "ad" && o.name === "hook2_ugc_2 - Copy" && o.status === "PAUSED").length).toBeGreaterThanOrEqual(1);
+});

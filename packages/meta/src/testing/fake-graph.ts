@@ -287,10 +287,38 @@ export function createFakeGraph() {
     }
     if (method === "POST" && edge === "copies") {
       if (params.status_option !== "PAUSED") return [400, graphError(100, "Fake Graph only accepts PAUSED copies")];
-      const copy: Obj = { ...obj, id: nextId(), name: `${String(obj.name)} - Copy`, status: "PAUSED", effective_status: "PAUSED", created_time: new Date().toISOString() };
-      if (params.campaign_id) copy.campaign_id = params.campaign_id;
-      state.objects.set(copy.id, copy);
-      return [200, obj.type === "campaign" ? { copied_campaign_id: copy.id } : obj.type === "ad" ? { copied_ad_id: copy.id } : { copied_adset_id: copy.id }];
+      const rename = json("rename_options") as { rename_suffix?: string } | null;
+      const suffix = rename?.rename_suffix ?? " - Copy";
+      const now = new Date().toISOString();
+      const clone = (src: Obj, patch: Partial<Obj>, top: boolean): Obj => {
+        const c: Obj = { ...src, ...patch, id: nextId(), status: "PAUSED", effective_status: "PAUSED", created_time: now };
+        if (top) c.name = `${String(src.name)}${suffix}`;
+        state.objects.set(c.id, c);
+        return c;
+      };
+      const deep = params.deep_copy === "true" || (params.deep_copy as unknown) === true;
+      if (obj.type === "campaign") {
+        const copy = clone(obj, {}, true);
+        if (deep) {
+          for (const set of [...state.objects.values()].filter((o) => o.type === "adset" && o.campaign_id === obj.id && o.status !== "DELETED")) {
+            const setCopy = clone(set, { campaign_id: copy.id }, false);
+            for (const ad of [...state.objects.values()].filter((o) => o.type === "ad" && o.adset_id === set.id && o.status !== "DELETED")) clone(ad, { campaign_id: copy.id, adset_id: setCopy.id }, false);
+          }
+        }
+        return [200, { copied_campaign_id: copy.id }];
+      }
+      if (obj.type === "adset") {
+        const campaignId = params.campaign_id ?? obj.campaign_id;
+        const copy = clone(obj, { campaign_id: campaignId }, true);
+        const ads: string[] = [];
+        if (deep) {
+          for (const ad of [...state.objects.values()].filter((o) => o.type === "ad" && o.adset_id === obj.id && o.status !== "DELETED")) ads.push(clone(ad, { campaign_id: campaignId, adset_id: copy.id }, false).id);
+        }
+        return [200, { copied_adset_id: copy.id, ad_object_ids: ads.map((id) => ({ ad_object_type: "ad", source_id: "", copied_id: id })) }];
+      }
+      const adset = params.adset_id ? state.objects.get(String(params.adset_id)) : undefined;
+      const copy = clone(obj, adset ? { adset_id: adset.id, campaign_id: adset.campaign_id } : {}, true);
+      return [200, { copied_ad_id: copy.id }];
     }
     if (method === "GET" && !edge) return [200, strip(obj)];
     if (method === "POST" && !edge) {

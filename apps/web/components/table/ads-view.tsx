@@ -13,7 +13,7 @@ import {
   type Table as TanstackTable,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { Bookmark, ChevronDown, Columns3, Download, Pause, Play, Rows3, Search, Table2, Trash2, X } from "lucide-react";
+import { Bookmark, ChevronDown, Columns3, CopyPlus, Download, Pause, Play, Rows3, Search, Table2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { adjustBudgetsAction, deleteViewAction, saveViewAction, setBudgetAction, setStatusAction } from "@/app/(app)/ads/actions";
 import { EmptyState } from "@/components/empty-state";
@@ -42,6 +42,7 @@ import type { AccountBudgets, AdsRow, Level } from "@/lib/server/ads";
 import { cn } from "@/lib/utils";
 import { useShell } from "@/components/shell/shell-provider";
 import { AdsTable, STICKY_WIDTHS, ROW_HEIGHT } from "./ads-table";
+import { DuplicateDialog } from "./duplicate-dialog";
 import { ALL_COLUMNS, COLUMNS, PRESETS, PRESET_LABELS, toCsv, toTableRows, type ColumnId, type PresetId, type TableRow } from "./columns";
 import { DetailDrawer } from "./detail-drawer";
 
@@ -101,6 +102,9 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
   const [confirm, setConfirm] = React.useState<TableRow[] | null>(null);
   const [budgetEdit, setBudgetEdit] = React.useState<{ row: TableRow; rect: DOMRect } | null>(null);
   const [saveOpen, setSaveOpen] = React.useState(false);
+  const [duplicateRows, setDuplicateRows] = React.useState<TableRow[] | null>(null);
+  // Stable for the memoized rows.
+  const onDuplicateRow = React.useCallback((r: TableRow) => setDuplicateRows([r]), []);
   const [busy, startBusy] = React.useTransition();
   const lastClicked = React.useRef<string | null>(null);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -444,6 +448,7 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
               onOpen={(r) => setDrawerId(r.id)}
               onBudget={(row, el) => setBudgetEdit({ row, rect: el.getBoundingClientRect() })}
               onSelectRange={selectRange}
+              onDuplicate={canEdit ? onDuplicateRow : undefined}
               scrollRef={scrollRef}
               totalReach={totalReach}
             />
@@ -484,12 +489,28 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => setDuplicateRows(selectedRows)}>
+            <CopyPlus />
+            Duplicate
+          </Button>
           <Button size="icon-sm" variant="ghost" aria-label="Clear selection" onClick={() => setRowSelection({})}>
             <X />
           </Button>
         </div>
       )}
 
+      <DuplicateDialog
+        rows={duplicateRows}
+        onClose={() => setDuplicateRows(null)}
+        onDone={(res) => {
+          report(res);
+          if (res.ok) {
+            setDuplicateRows(null);
+            setRowSelection({});
+            router.refresh();
+          }
+        }}
+      />
       <ActivateDialog rows={confirm} budgets={budgets} onClose={() => setConfirm(null)} onConfirm={(rows) => (setConfirm(null), setStatus(rows, "ACTIVE"))} />
       {budgetEdit && (
         <BudgetEditor

@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  duplicateObject,
   changeDailyBudget,
   changeStatus,
   quarterHourBucket,
@@ -264,5 +265,60 @@ export async function deleteViewAction(id: string): Promise<ActionResult> {
     await asUser(session.userId, (tx) => tx.delete(savedViews).where(eq(savedViews.id, z.uuid().parse(id))));
     revalidatePath("/ads");
     return { ok: true, message: "View deleted." };
+  });
+}
+
+export type DuplicateTarget = { id: string; name: string; parentName: string | null };
+
+/** Campaigns (for ad sets) or ad sets (for ads) in one account, for "Existing campaign / ad set". */
+export async function loadDuplicateTargets(objectLevel: string, adAccountId: string): Promise<ActionResult<DuplicateTarget[]>> {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ level: z.enum(["adset", "ad"]), account: z.uuid() }).parse({ level: objectLevel, account: adAccountId });
+    const rows = await asUser(session.userId, (tx) =>
+      input.level === "adset"
+        ? tx.execute(sql`select id, name, null as parent_name from meta_campaigns where ad_account_id = ${input.account} and status not in ('DELETED', 'ARCHIVED') order by name`)
+        : tx.execute(sql`select s.id, s.name, c.name as parent_name from meta_adsets s join meta_campaigns c on c.id = s.campaign_id
+            where s.ad_account_id = ${input.account} and s.status not in ('DELETED', 'ARCHIVED') order by c.name, s.name`),
+    );
+    return { ok: true, data: (rows as unknown as { id: string; name: string; parent_name: string | null }[]).map((r) => ({ id: r.id, name: r.name, parentName: r.parent_name })) };
+  });
+}
+
+/** Ads Manager's Duplicate: copies are created paused, each logged with Meta's response. */
+export async function duplicateAction(objectLevel: string, objectIds: string[], options: { copies: number; destinationId?: string | null }) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z
+      .object({ level, ids: z.array(z.uuid()).min(1).max(50), copies: z.number().int().min(1).max(10), destinationId: z.uuid().nullish() })
+      .parse({ level: objectLevel, ids: objectIds, ...options });
+    await assertNotKilled();
+    const failed: Failure[] = [];
+    let created = 0;
+    for (const id of input.ids) {
+      try {
+        const result = await duplicateObject(getDb(), { level: input.level, id, copies: input.copies, destinationId: input.destinationId });
+        await asUser(session.userId, (tx) =>
+          tx.insert(changeLog).values(
+            result.copies.map((c) => ({
+              actorId: session.userId,
+              source: "ui" as const,
+              entityLevel: input.level,
+              entityId: c.copiedId || result.metaId,
+              action: "duplicate",
+              before: { sourceId: result.metaId, name: result.name },
+              after: { copiedId: c.copiedId, status: "PAUSED" },
+              metaResponse: c.response as object,
+            })),
+          ),
+        );
+        created += result.copies.length;
+      } catch (e) {
+        failed.push(failureOf(id, e));
+      }
+    }
+    revalidatePath("/ads");
+    if (failed.length === 0) return { ok: true, message: `Created ${created} ${created === 1 ? "copy" : "copies"}, paused.`, data: { failed } };
+    return summarize(created, failed, "Created copies of");
   });
 }
