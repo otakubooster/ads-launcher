@@ -8,7 +8,7 @@ import { createTestDb } from "@fahd/db/testing";
 import { FAKE_BUSINESS_ID, createFakeGraph } from "@fahd/meta/testing";
 import { encryptToken } from "@fahd/shared";
 import { EMPTY_DRAFT, buildPlan, type LaunchDraft } from "@fahd/shared/launch-plan";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { acquireLaunchLease, activateLaunch, createLaunchItems, releaseLaunchLease, resetFailedItems, runLaunch, storageFromEnv, syncConnectionAssets } from "../src";
 
@@ -158,6 +158,31 @@ describe("runLaunch", () => {
     expect(objects("campaign").filter((c) => c.name === plan.campaign.name)).toHaveLength(campaignsBefore);
     const [row] = await db.select().from(launches).where(eq(launches.id, launchId));
     expect(row!.status).toBe("done");
+  });
+
+  it("makes new creatives on retry when the first ones were made while the Meta app was in Development mode", async () => {
+    const mode = (m: string) => fetch(`${process.env.META_GRAPH_HOST}/__fake/app-mode`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: m }) });
+    const small = { ...draft(), creatives: { groups: groups.slice(0, 2) } };
+    const { launchId } = await newLaunch(small);
+    await mode("development");
+    const first = await runLaunch(db, storageFromEnv(), launchId, fast);
+    expect(first.status).not.toBe("done");
+    const items = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId));
+    expect(items.filter((i) => i.level === "ad").every((i) => i.status === "failed" && /development mode/i.test(i.errorMessage ?? ""))).toBe(true);
+    const oldCreatives = items.filter((i) => i.level === "creative").map((i) => i.metaId);
+    expect(oldCreatives.every(Boolean)).toBe(true);
+
+    // Launches run before this fix left those creatives "done": retry must still replace them.
+    await db.update(launchItems).set({ status: "done", errorMessage: null }).where(and(eq(launchItems.launchId, launchId), eq(launchItems.level, "creative")));
+    // The app goes Live; retry must not reuse the creatives made in Development mode.
+    await mode("live");
+    await resetFailedItems(db, launchId);
+    const second = await runLaunch(db, storageFromEnv(), launchId, fast);
+    expect(second.status).toBe("done");
+    const after = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId));
+    const newCreatives = after.filter((i) => i.level === "creative").map((i) => i.metaId);
+    expect(newCreatives.some((id) => oldCreatives.includes(id))).toBe(false);
+    expect(after.filter((i) => i.level === "ad").every((i) => i.status === "done")).toBe(true);
   });
 
   it("adopts an object that already exists after an ambiguous attempt instead of creating it twice", async () => {
