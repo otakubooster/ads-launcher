@@ -162,6 +162,8 @@ export class MetaClient {
       return {
         method: r.method,
         name: r.name,
+        // Meta drops the response of a request a later one depends on, unless told not to.
+        ...(r.name ? { omit_response_on_success: false } : {}),
         relative_url: r.method === "GET" && fields ? `${relativeUrl}?${fields}` : relativeUrl,
         body: r.method === "GET" ? undefined : fields || undefined,
       };
