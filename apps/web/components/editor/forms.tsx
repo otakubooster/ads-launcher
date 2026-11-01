@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, Input, NativeSelect } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { LibraryPicker, libraryGroups, type LibraryGroup } from "@/components/launch/creatives-step";
+import { LibraryPicker, type LibraryGroup } from "@/components/launch/creatives-step";
 import { PhonePreview } from "@/components/launch/phone-preview";
 import type { CreativeItem } from "@/lib/server/creatives";
 import type { EditorAccount } from "@/lib/server/editor";
@@ -457,7 +457,8 @@ export function AdForm({
       <LibraryPicker
         open={picking}
         onOpenChange={setPicking}
-        groups={libraryGroups(library, brandId)}
+        library={library}
+        brandId={brandId}
         chosen={new Set()}
         onPick={(picked: LibraryGroup[]) => {
           const g = picked[0];
