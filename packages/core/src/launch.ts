@@ -84,6 +84,12 @@ export function rejectedFeatureKey(error: unknown): string | null {
   return /Param key '([^']+)' in degrees_of_freedom_spec/i.exec(message)?.[1] ?? null;
 }
 
+/** Meta's "Ads creative post was created by an app that is in development mode" (subcode 1885183). */
+export function madeInDevelopmentMode(error: unknown) {
+  const e = error as { message?: string; userMessage?: string | null; subcode?: number | null } | null;
+  return e?.subcode === 1885183 || /created by an app that is in development mode/i.test(`${e?.message ?? ""} ${e?.userMessage ?? ""}`);
+}
+
 export function buildCreativeParams(input: {
   name: string;
   pageId: string;
@@ -595,6 +601,9 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
                 throw new StopLaunch(a.error.message);
               }
               await fail(ad, a.error);
+              // A creative made while the Meta app was in Development mode can never run as an ad:
+              // fail it too, so "Retry failed items" makes a new one instead of reusing it.
+              if (madeInDevelopmentMode(a.error)) await save(creative, { status: "failed", errorMessage: "Made while the Meta app was in Development mode; a new one is created on retry." });
             } else {
               await save(ad, { status: "failed", attempts: ad.attempts + 1, errorMessage: "Skipped: its creative wasn't created." });
             }
@@ -687,6 +696,15 @@ async function finish(db: AnyDb, launchId: string, stopped = false): Promise<Run
 
 /** Puts failed items back to pending so the runner tries them again (docs/spec.md → Retry failed items). */
 export async function resetFailedItems(db: AnyDb, launchId: string) {
+  // Ads refused because their creative was made in Development mode: that creative must be made again.
+  const devFailed = await db
+    .select({ parent: launchItems.parentItemId })
+    .from(launchItems)
+    .where(and(eq(launchItems.launchId, launchId), eq(launchItems.level, "ad"), eq(launchItems.status, "failed"), sql`${launchItems.errorMessage} ilike '%development mode%'`));
+  const creativeIds = devFailed.map((r) => r.parent).filter((id): id is string => Boolean(id));
+  if (creativeIds.length) {
+    await db.update(launchItems).set({ status: "pending", metaId: null, errorCode: null, errorMessage: null }).where(and(eq(launchItems.level, "creative"), inArray(launchItems.id, creativeIds)));
+  }
   const reset = await db
     .update(launchItems)
     .set({ status: "pending", errorCode: null, errorMessage: null })

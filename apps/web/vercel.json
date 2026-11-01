@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "pnpm --filter @fahd/db migrate && next build",
-  "crons": [{ "path": "/api/cron/sync?mode=daily", "schedule": "17 4 * * *" }]
+  "crons": [
+    {
+      "path": "/api/cron/sync?mode=daily",
+      "schedule": "17 4 * * *"
+    }
+  ],
+  "ignoreCommand": "exit 1"
 }

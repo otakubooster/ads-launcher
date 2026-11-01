@@ -10,6 +10,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
  *   POST /__fake/fail   {"match": "regex on METHOD path", "status": 400, "error": {...}, "times": 1}
  *   POST /__fake/reset  restore the initial state
  *   POST /__fake/refuse-feature  {"key": "music"}  refuse that Advantage+ creative feature key, like Meta
+ *   POST /__fake/app-mode  {"mode": "development"}  creatives made now can't become ads (Meta subcode 1885183)
  *   GET  /__fake/state  everything the fake holds
  */
 
@@ -83,7 +84,7 @@ function initialState() {
       }
     }
   });
-  return { objects, seq, failures: [] as Failure[], videoPolls: new Map<string, number>(), refusedFeatures: new Set<string>() };
+  return { objects, seq, failures: [] as Failure[], videoPolls: new Map<string, number>(), refusedFeatures: new Set<string>(), appMode: "live" as "live" | "development" };
 }
 
 function thumb(seed: string) {
@@ -224,6 +225,9 @@ export function createFakeGraph() {
           const creativeId = (obj.creative as { creative_id?: string })?.creative_id;
           const creative = creativeId ? state.objects.get(creativeId) : undefined;
           if (!creative) return [400, graphError(100, "Invalid parameter", { error_user_title: "Creative not found", error_user_msg: "The ad's creative does not exist." })];
+          // Meta: a creative made while the app was in Development mode can't run as an ad.
+          if (creative.made_in_development)
+            return [400, graphError(100, "Invalid parameter", { error_subcode: 1885183, error_user_title: "Ads creative post was created by an app that is in development mode", error_user_msg: "Ads creative post was created by an app that is in development mode. It must be in public to create this ad." })];
           obj.creative = { id: creative.id, thumbnail_url: creative.thumbnail_url };
           const adset = state.objects.get(String(obj.adset_id));
           obj.campaign_id = adset?.campaign_id;
@@ -236,7 +240,7 @@ export function createFakeGraph() {
         const features = (json("degrees_of_freedom_spec") as { creative_features_spec?: Record<string, unknown> } | null)?.creative_features_spec ?? {};
         const refused = Object.keys(features).find((k) => state.refusedFeatures.has(k));
         if (refused) return [400, graphError(100, `(#100) Param key '${refused}' in degrees_of_freedom_spec[creative_features_spec] must be one of {IG_VIDEO_NATIVE_SUBTITLE, IMAGE_ANIMATION} - got "${refused}".`)];
-        const obj: Obj = { id: nextId(), type: "adcreative", account_id: head, thumbnail_url: thumb(params.name ?? "creative") };
+        const obj: Obj = { id: nextId(), type: "adcreative", account_id: head, thumbnail_url: thumb(params.name ?? "creative"), made_in_development: state.appMode === "development" };
         for (const [k, v] of Object.entries(params)) obj[k] = json(k) ?? v;
         state.objects.set(obj.id, obj);
         return [200, { id: obj.id }];
@@ -391,6 +395,10 @@ export function createFakeGraph() {
       if (url.pathname === "/__fake/reset") {
         state = initialState();
         reports.clear();
+        return send(200, { ok: true });
+      }
+      if (url.pathname === "/__fake/app-mode") {
+        state.appMode = (body as { mode?: string }).mode === "development" ? "development" : "live";
         return send(200, { ok: true });
       }
       if (url.pathname === "/__fake/refuse-feature") {
