@@ -163,12 +163,16 @@ export function createFakeGraph() {
 
     if (method === "POST" && parts.length === 0 && params.batch) {
       const results: Record<string, string> = {};
-      const out = (json("batch") as { method: string; relative_url: string; body?: string; name?: string }[]).map((req) => {
+      const batch = json("batch") as { method: string; relative_url: string; body?: string; name?: string; omit_response_on_success?: boolean }[];
+      // Like Meta: a named request that a later one references gets a null response unless omit_response_on_success is false.
+      const referenced = new Set(batch.flatMap((r) => [...`${r.relative_url} ${r.body ?? ""}`.matchAll(/\{result=([^:]+):/g)].map((m) => m[1]!)));
+      const out = batch.map((req) => {
         const resolve = (s: string) => s.replace(/\{result=([^:]+):\$\.id\}/g, (_, n: string) => results[n] ?? "");
         const [p, query] = resolve(req.relative_url).split("?");
         const body = Object.fromEntries(new URLSearchParams(resolve(req.body ?? query ?? "")));
         const [code, res] = handle(req.method, p!.replace(/^v\d+\.\d+\//, ""), body);
         if (req.name && code === 200) results[req.name] = (res as { id?: string }).id ?? "";
+        if (req.name && code === 200 && referenced.has(req.name) && req.omit_response_on_success !== false) return null;
         return { code, body: JSON.stringify(res) };
       });
       return [200, out];

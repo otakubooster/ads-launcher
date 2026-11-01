@@ -576,7 +576,10 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
           for (const [i, { creative, ad }] of todo.entries()) {
             const c = results[i * 2]!;
             const a = results[i * 2 + 1]!;
-            if (c.ok) {
+            if (!c.ok && a.ok) {
+              // The ad exists, so its creative does too (Meta may leave the creative's own response empty).
+              await save(creative, { status: "done", attempts: creative.attempts + 1, errorMessage: null });
+            } else if (c.ok) {
               if (creative.status !== "done") {
                 await save(creative, { status: "done", metaId: c.body.id, attempts: creative.attempts + 1, errorMessage: null });
                 await logCreate("creative", c.body.id, (creative.payload as CreativePayload).name, c.body);
