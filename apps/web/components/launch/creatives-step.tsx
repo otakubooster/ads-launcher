@@ -17,19 +17,21 @@ import { cn } from "@/lib/utils";
 import type { DraftCreativeGroup } from "@fahd/shared/launch-plan";
 import type { StepProps } from "./builder";
 
-export type LibraryGroup = { key: string; items: CreativeItem[]; lead: CreativeItem; ratios: string[] };
+export type LibraryGroup = { id: string; key: string; items: CreativeItem[]; lead: CreativeItem; ratios: string[] };
 
 const RATIO_ORDER = ["9:16", "4:5", "1:1", "16:9"];
 
 export function libraryGroups(library: CreativeItem[], brandId?: string): LibraryGroup[] {
+  // Groups are per brand: two brands can both have a "hook1".
   const map = new Map<string, CreativeItem[]>();
   for (const c of library) {
     if (brandId && c.brandId !== brandId) continue;
-    map.set(c.groupKey, [...(map.get(c.groupKey) ?? []), c]);
+    const id = `${c.brandId}:${c.groupKey}`;
+    map.set(id, [...(map.get(id) ?? []), c]);
   }
-  return [...map].map(([key, items]) => {
+  return [...map].map(([id, items]) => {
     const sorted = [...items].sort((a, b) => RATIO_ORDER.indexOf(a.ratio ?? "") - RATIO_ORDER.indexOf(b.ratio ?? ""));
-    return { key, items: sorted, lead: sorted[0]!, ratios: sorted.map((i) => i.ratio ?? "?") };
+    return { id, key: sorted[0]!.groupKey, items: sorted, lead: sorted[0]!, ratios: sorted.map((i) => i.ratio ?? "?") };
   });
 }
 
@@ -187,7 +189,9 @@ export function CreativesStep({ data, library, draft, update }: StepProps) {
       <LibraryPicker
         open={picking}
         onOpenChange={setPicking}
-        groups={libraryGroups(library, data.preset.brandId)}
+        library={library}
+        brandId={data.preset.brandId}
+        brandName={data.preset.brandName}
         chosen={new Set(groups.map((g) => g.key))}
         onPick={(picked) => {
           addLibraryGroups(picked);
@@ -219,18 +223,32 @@ export function CreativesStep({ data, library, draft, update }: StepProps) {
 export function LibraryPicker({
   open,
   onOpenChange,
-  groups,
+  library,
+  brandId,
+  brandName,
   chosen,
   onPick,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  groups: LibraryGroup[];
+  library: CreativeItem[];
+  /** The preset's brand: shown first; "All brands" shows the rest of the library too. */
+  brandId: string;
+  brandName?: string;
   chosen: Set<string>;
   onPick: (g: LibraryGroup[]) => void;
 }) {
+  const router = useRouter();
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [query, setQuery] = React.useState("");
+  const [allBrands, setAllBrands] = React.useState(false);
+  // Files uploaded since this page opened (another tab, the library) show up when the picker opens.
+  React.useEffect(() => {
+    if (open) router.refresh();
+  }, [open, router]);
+  const own = libraryGroups(library, brandId);
+  const others = libraryGroups(library).filter((g) => g.lead.brandId !== brandId);
+  const groups = allBrands ? [...own, ...others] : own;
   const shown = groups.filter((g) => !query || g.key.toLowerCase().includes(query.toLowerCase()) || Object.values(g.lead.tags).some((t) => t?.toLowerCase().includes(query.toLowerCase())));
 
   return (
@@ -244,19 +262,32 @@ export function LibraryPicker({
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Pick creatives</DialogTitle>
-          <DialogDescription>Creatives for this preset&apos;s brand. Paired ratios come along together.</DialogDescription>
+          <DialogDescription>
+            {allBrands ? "Every brand in the library." : `Creatives for ${brandName ?? "this preset's brand"}.`} Paired ratios come along together.
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 px-5 py-4">
-          <Input placeholder="Search by name, angle or hook" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search creatives" />
+          <div className="flex items-center gap-2">
+            <Input placeholder="Search by name, angle or hook" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search creatives" className="flex-1" />
+            {others.length > 0 && (
+              <label className="flex shrink-0 items-center gap-2 text-ui text-slate-11">
+                <Checkbox checked={allBrands} onChange={(e) => setAllBrands(e.currentTarget.checked)} />
+                All brands ({others.length} more)
+              </label>
+            )}
+          </div>
+          {!allBrands && others.length > 0 && own.length === 0 && (
+            <p className="text-ui text-amber-11">No creatives are tagged {brandName ?? "with this brand"} yet, but {others.length} from other brands are. Tick &quot;All brands&quot; to use them.</p>
+          )}
           {shown.length === 0 ? (
             <p className="py-10 text-center text-body text-slate-11">{groups.length ? "Nothing matches." : "The library has no creatives for this brand yet. Upload some first."}</p>
           ) : (
             <ul className="grid max-h-[420px] grid-cols-4 gap-3 overflow-y-auto p-0.5">
               {shown.map((g) => {
-                const on = selected.has(g.key);
+                const on = selected.has(g.id);
                 const already = chosen.has(g.key);
                 return (
-                  <li key={g.key}>
+                  <li key={g.id}>
                     <label className={cn("block overflow-hidden rounded-card border", on ? "border-iris-8 ring-1 ring-iris-8" : "border-slate-6 hover:border-slate-8", already && "opacity-60")}>
                       <div className="relative aspect-[4/5] bg-slate-3">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -266,7 +297,7 @@ export function LibraryPicker({
                             checked={on || already}
                             disabled={already}
                             aria-label={`Select ${g.key}`}
-                            onChange={() => setSelected((s) => (s.has(g.key) ? new Set([...s].filter((k) => k !== g.key)) : new Set(s).add(g.key)))}
+                            onChange={() => setSelected((s) => (s.has(g.id) ? new Set([...s].filter((k) => k !== g.id)) : new Set(s).add(g.id)))}
                           />
                         </span>
                         <span className="absolute right-2 bottom-2 flex gap-1">
@@ -277,7 +308,10 @@ export function LibraryPicker({
                           ))}
                         </span>
                       </div>
-                      <p className="truncate px-2 py-1.5 text-ui font-medium">{g.key}</p>
+                      <p className="truncate px-2 py-1.5 text-ui font-medium">
+                        {g.key}
+                        {allBrands && g.lead.brandId !== brandId && <span className="block truncate text-label font-normal text-slate-11">{g.lead.brandName}</span>}
+                      </p>
                     </label>
                   </li>
                 );
@@ -289,7 +323,7 @@ export function LibraryPicker({
               Cancel
             </Button>
             <Button variant="primary" disabled={selected.size === 0} onClick={() => {
-                onPick(groups.filter((g) => selected.has(g.key)));
+                onPick(groups.filter((g) => selected.has(g.id)));
                 setSelected(new Set());
               }}>
               Add {selected.size || ""} {selected.size === 1 ? "creative" : "creatives"}
