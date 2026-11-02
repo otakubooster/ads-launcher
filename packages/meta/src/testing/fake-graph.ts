@@ -354,6 +354,14 @@ export function createFakeGraph() {
     }
     if (method === "DELETE") {
       obj.status = "DELETED";
+      obj.effective_status = "DELETED";
+      // Like Meta: a campaign's ad sets and ads, and an ad set's ads, are deleted with it.
+      for (const child of state.objects.values()) {
+        if ((child.type === "adset" || child.type === "ad") && (child.campaign_id === obj.id || child.adset_id === obj.id)) {
+          child.status = "DELETED";
+          child.effective_status = "DELETED";
+        }
+      }
       return [200, { success: true }];
     }
     return [400, graphError(100, `Unsupported ${method} request on ${path}`)];

@@ -69,6 +69,11 @@ export function setStatus(client: MetaClient, objectId: string, status: "ACTIVE"
   return client.post<{ success: boolean }>(objectId, { status }, { accountId: adAccountId });
 }
 
+/** Deletes a campaign, ad set or ad on Meta (its ad sets and ads go with it). Can't be undone. */
+export function deleteObject(client: MetaClient, objectId: string, adAccountId: string) {
+  return client.delete<{ success: boolean }>(objectId, undefined, { accountId: adAccountId });
+}
+
 /** Budgets are in the account currency's minor unit (cents). */
 export function setDailyBudget(client: MetaClient, objectId: string, dailyBudgetMinor: number, adAccountId: string) {
   if (!Number.isInteger(dailyBudgetMinor) || dailyBudgetMinor <= 0) {

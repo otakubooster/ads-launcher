@@ -9,7 +9,7 @@ import { duplicateAd, duplicateAdset, editorHasErrors, newAd, newAdset, validate
 import { formatMoney } from "@/lib/format";
 import { publishEditor, saveEditor } from "@/app/(app)/create/actions";
 import { UploadDialog } from "@/components/creatives/creatives-view";
-import { LibraryPicker, libraryGroups, type LibraryGroup } from "@/components/launch/creatives-step";
+import { LibraryPicker, type LibraryGroup } from "@/components/launch/creatives-step";
 import { DeleteDraftButton } from "@/components/launch/delete-draft-button";
 import { Button } from "@/components/ui/button";
 import { useConfirm } from "@/components/ui/confirm";
@@ -281,7 +281,9 @@ export function CampaignEditor({ data, library }: { data: EditorData; library: C
       <LibraryPicker
         open={bulkFor !== null}
         onOpenChange={(o) => !o && setBulkFor(null)}
-        groups={libraryGroups(library, data.brandId)}
+        library={library}
+        brandId={data.brandId}
+        brandName={data.brandName}
         chosen={new Set(bulkAdset?.ads.flatMap((a) => a.creativeIds.map((id) => library.find((c) => c.id === id)?.groupKey ?? id)) ?? [])}
         onPick={(groups) => {
           if (bulkFor) bulkAds(bulkFor, groups);

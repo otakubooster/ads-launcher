@@ -305,3 +305,32 @@ test("a launch drops an Advantage+ feature Meta refuses and still creates every 
   expect(creatives).toHaveLength(1);
   expect(Object.keys(creatives[0]!.degrees_of_freedom_spec?.creative_features_spec ?? {})).not.toContain("enhance_cta");
 });
+
+test("the picker shows the preset's brand first and other brands under All brands, with fresh uploads", async ({ page }) => {
+  test.setTimeout(150_000);
+  await signIn(page, "Fahd");
+  // Open the editor first, then upload in the library (like another tab): the picker must still see it.
+  await page.goto("/launch");
+  await page.getByLabel("Preset", { exact: true }).selectOption({ label: "Lumen · CA · en" });
+  await page.getByRole("button", { name: "Create campaign" }).click();
+  await page.waitForURL(/\/create\/[0-9a-f-]{36}$/);
+  const editorUrl = page.url();
+
+  await page.goto("/creatives");
+  await page.getByRole("button", { name: "Upload" }).first().click();
+  const upload = page.getByRole("dialog");
+  await upload.getByLabel("Brand").selectOption({ label: "Arbor" });
+  await upload.getByLabel("Choose files").setInputFiles([{ name: "arborhero_4x5.png", mimeType: "image/png", buffer: await makeImage(page, 1080, 1350, "AR") }]);
+  await expect(upload.getByText("Ready")).toHaveCount(1, { timeout: 30_000 });
+  await upload.getByRole("button", { name: "Done" }).click();
+
+  await page.goto(editorUrl);
+  await page.getByRole("navigation", { name: "Campaign structure" }).getByRole("button", { name: /^Lumen CA ad 1/ }).click();
+  await page.getByRole("button", { name: "Choose media" }).click();
+  const picker = page.getByRole("dialog");
+  await expect(picker.getByLabel("Select e2eglow")).toBeVisible();
+  await expect(picker.getByLabel("Select arborhero")).toHaveCount(0);
+  await picker.getByLabel(/All brands/).check();
+  await expect(picker.getByLabel("Select arborhero")).toBeVisible();
+  await expect(picker.getByText("Arbor", { exact: true })).toBeVisible();
+});

@@ -1,5 +1,5 @@
 import { adAccounts, metaAdsets, metaAds, metaCampaigns } from "@fahd/db/schema";
-import { MetaApiError, setDailyBudget, setStatus } from "@fahd/meta";
+import { MetaApiError, deleteObject as deleteOnMeta, setDailyBudget, setStatus } from "@fahd/meta";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { clientForAdAccount } from "./meta-client";
 import type { AnyDb } from "./types";
@@ -39,6 +39,24 @@ export async function changeStatus(db: AnyDb, level: ObjectLevel, id: string, st
   const table = TABLES[level];
   await db.update(table).set({ status, effectiveStatus: status }).where(eq(table.id, id));
   return { level, id, metaId: obj.metaId, adAccountId: obj.adAccountId, name: obj.name, before: { status: obj.status }, after: { status }, metaResponse };
+}
+
+/**
+ * Ads Manager's Delete: removes the object on Meta (children go with it) and marks
+ * it and its children DELETED in the mirror, so they leave the table. `db` must be privileged.
+ */
+export async function deleteMetaObject(db: AnyDb, level: ObjectLevel, id: string): Promise<MetaChange> {
+  const obj = await loadObject(db, level, id);
+  const { client, metaAccountId } = await clientForAdAccount(db, obj.adAccountId);
+  const metaResponse = await deleteOnMeta(client, obj.metaId, metaAccountId);
+  const gone = { status: "DELETED", effectiveStatus: "DELETED" };
+  await db.update(TABLES[level]).set(gone).where(eq(TABLES[level].id, id));
+  if (level === "campaign") {
+    await db.update(metaAdsets).set(gone).where(eq(metaAdsets.campaignId, id));
+    await db.update(metaAds).set(gone).where(eq(metaAds.campaignId, id));
+  }
+  if (level === "adset") await db.update(metaAds).set(gone).where(eq(metaAds.adsetId, id));
+  return { level, id, metaId: obj.metaId, adAccountId: obj.adAccountId, name: obj.name, before: { status: obj.status }, after: { status: "DELETED" }, metaResponse };
 }
 
 export async function changeDailyBudget(db: AnyDb, level: "campaign" | "adset", id: string, dailyBudget: number): Promise<MetaChange> {
