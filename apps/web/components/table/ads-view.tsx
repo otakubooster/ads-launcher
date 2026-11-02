@@ -15,10 +15,11 @@ import {
 } from "@tanstack/react-table";
 import { Bookmark, ChevronDown, Columns3, CopyPlus, Download, Pause, Pencil, Play, Plus, Rows3, Search, Table2, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
-import { adjustBudgetsAction, deleteViewAction, saveViewAction, setBudgetAction, setStatusAction } from "@/app/(app)/ads/actions";
+import { adjustBudgetsAction, deleteObjectsAction, deleteViewAction, saveViewAction, setBudgetAction, setStatusAction } from "@/app/(app)/ads/actions";
 import { EmptyState } from "@/components/empty-state";
 import { StatusDot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -109,6 +110,7 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
   const onDuplicateRow = React.useCallback((r: TableRow) => setDuplicateRows([r]), []);
   const [editRow, setEditRow] = React.useState<TableRow | null>(null);
   const onEditRow = React.useCallback((r: TableRow) => setEditRow(r), []);
+  const { confirm: confirmDelete, dialog: deleteDialog } = useConfirm();
   const [busy, startBusy] = React.useTransition();
   const lastClicked = React.useRef<string | null>(null);
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
@@ -211,6 +213,32 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
   };
 
   // --- Writes ----------------------------------------------------------------
+
+  // Ads Manager's Delete: confirm with what goes along, then delete on Meta.
+  async function deleteRows(rows: TableRow[]) {
+    if (!rows.length) return;
+    const nouns = { campaign: ["campaign", "campaigns"], adset: ["ad set", "ad sets"], ad: ["ad", "ads"] } as const;
+    const [one, many] = nouns[level];
+    const what = rows.length === 1 ? `${one} "${rows[0]!.name}"` : `${rows.length} ${many}`;
+    const children = level === "campaign" ? " Their ad sets and ads are deleted too." : level === "adset" ? " Their ads are deleted too." : "";
+    const ok = await confirmDelete({
+      title: `Delete ${what}?`,
+      description: `This deletes ${rows.length === 1 ? "it" : "them"} on Meta and can't be undone.${children} Results stay in your reports. To keep ${rows.length === 1 ? "it" : "them"}, pause instead.`,
+      confirmLabel: rows.length === 1 ? `Delete ${one}` : `Delete ${rows.length} ${many}`,
+      destructive: true,
+    });
+    if (!ok) return;
+    startBusy(async () => {
+      const res = await deleteObjectsAction(level, rows.map((r) => r.id));
+      report(res);
+      setRowSelection({});
+      router.refresh();
+    });
+  }
+  // Stable for the memoized rows; always calls the latest deleteRows.
+  const deleteRowsRef = React.useRef(deleteRows);
+  deleteRowsRef.current = deleteRows;
+  const onDeleteRow = React.useCallback((r: TableRow) => void deleteRowsRef.current([r]), []);
 
   function report(res: ActionResult<unknown>) {
     if (res.ok) toast.success(res.message ?? "Done");
@@ -487,6 +515,7 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
               onSelectRange={selectRange}
               onDuplicate={canEdit ? onDuplicateRow : undefined}
               onEdit={canEdit ? onEditRow : undefined}
+              onDelete={canEdit ? onDeleteRow : undefined}
               scrollRef={scrollRef}
               totalReach={totalReach}
             />
@@ -537,6 +566,10 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
             <CopyPlus />
             Duplicate
           </Button>
+          <Button size="sm" variant="ghost" disabled={busy} className="text-red-11 hover:text-red-11" onClick={() => void deleteRows(selectedRows)}>
+            <Trash2 />
+            Delete
+          </Button>
           <Button size="icon-sm" variant="ghost" aria-label="Clear selection" onClick={() => setRowSelection({})}>
             <X />
           </Button>
@@ -567,6 +600,7 @@ export function AdsView({ level, rows: initialRows, totalReach = null, budgets, 
           }
         }}
       />
+      {deleteDialog}
       <ActivateDialog rows={confirm} budgets={budgets} onClose={() => setConfirm(null)} onConfirm={(rows) => (setConfirm(null), setStatus(rows, "ACTIVE"))} />
       {budgetEdit && (
         <BudgetEditor

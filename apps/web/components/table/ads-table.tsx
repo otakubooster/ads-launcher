@@ -3,7 +3,7 @@
 import * as React from "react";
 import { flexRender, type Row, type Table } from "@tanstack/react-table";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowDown, ArrowUp, Copy, CopyPlus, ExternalLink, PanelRightOpen, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, CopyPlus, ExternalLink, PanelRightOpen, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { StatusDot } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,6 +33,8 @@ type Props = {
   onDuplicate?: (row: TableRow) => void;
   /** Ads Manager's Edit for one row; omitted for viewers. */
   onEdit?: (row: TableRow) => void;
+  /** Ads Manager's Delete for one row (asks first); omitted for viewers. */
+  onDelete?: (row: TableRow) => void;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   totalReach?: number | null;
 };
@@ -42,7 +44,7 @@ function adsManagerUrl(r: TableRow) {
   return `https://adsmanager.facebook.com/adsmanager/manage/${tab}?selected_${r.level}_ids=${r.metaId}`;
 }
 
-export function AdsTable({ table, density, canEdit, activeId, onActivate, onToggle, onOpen, onBudget, onSelectRange, onDuplicate, onEdit, onDrill, scrollRef, totalReach = null }: Props) {
+export function AdsTable({ table, density, canEdit, activeId, onActivate, onToggle, onOpen, onBudget, onSelectRange, onDuplicate, onEdit, onDelete, onDrill, scrollRef, totalReach = null }: Props) {
   const rows = table.getRowModel().rows;
   const rowHeight = ROW_HEIGHT[density];
 
@@ -163,6 +165,7 @@ export function AdsTable({ table, density, canEdit, activeId, onActivate, onTogg
                 onSelectRange={onSelectRange}
                 onDuplicate={onDuplicate}
                 onEdit={onEdit}
+                onDelete={onDelete}
               />
             );
           })}
@@ -268,10 +271,10 @@ type BodyRowProps = {
   selected: boolean;
   active: boolean;
   rowHeight: number;
-} & Pick<Props, "canEdit" | "onActivate" | "onToggle" | "onOpen" | "onBudget" | "onSelectRange" | "onDuplicate" | "onEdit" | "onDrill">;
+} & Pick<Props, "canEdit" | "onActivate" | "onToggle" | "onOpen" | "onBudget" | "onSelectRange" | "onDuplicate" | "onEdit" | "onDelete" | "onDrill">;
 
 /** Memoized so scrolling only renders rows entering the viewport. */
-const BodyRow = React.memo(function BodyRow({ row, selected, active, rowHeight, canEdit, onActivate, onToggle, onOpen, onBudget, onSelectRange, onDuplicate, onEdit, onDrill }: BodyRowProps) {
+const BodyRow = React.memo(function BodyRow({ row, selected, active, rowHeight, canEdit, onActivate, onToggle, onOpen, onBudget, onSelectRange, onDuplicate, onEdit, onDelete, onDrill }: BodyRowProps) {
   const r = row.original;
   return (
     <tr
@@ -337,6 +340,7 @@ const BodyRow = React.memo(function BodyRow({ row, selected, active, rowHeight, 
                   <RowAction label="Open details" onClick={() => onOpen(r)} icon={PanelRightOpen} />
                   {onEdit && r.status !== "DELETED" && <RowAction label="Edit" onClick={() => onEdit(r)} icon={Pencil} />}
                   {onDuplicate && r.status !== "DELETED" && <RowAction label="Duplicate" onClick={() => onDuplicate(r)} icon={CopyPlus} />}
+                  {onDelete && r.status !== "DELETED" && <RowAction label="Delete" onClick={() => onDelete(r)} icon={Trash2} />}
                   <RowAction
                     label="Copy Meta ID"
                     icon={Copy}

@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  deleteMetaObject,
   duplicateObject,
   editAdCopy,
   editObject,
@@ -405,5 +406,28 @@ export async function editAdCopyAction(adId: string, copy: z.infer<typeof copyIn
     const change = await logged(session.userId, "ad", input.id, "edit_creative", () => editAdCopy(getDb(), input.id, input.copy));
     revalidatePath("/ads");
     return { ok: true, message: Object.keys(change.after).length ? `Saved ${change.name}. Meta reviews the new text before it runs.` : "Nothing changed." } satisfies ActionResult;
+  });
+}
+
+/** Ads Manager's Delete: removes the objects on Meta (children go with them), one change_log row each. */
+export async function deleteObjectsAction(objectLevel: string, objectIds: string[]) {
+  return runAction(async () => {
+    const session = await requireRole("owner", "admin", "buyer");
+    const input = z.object({ level, ids: z.array(z.uuid()).min(1).max(200) }).parse({ level: objectLevel, ids: objectIds });
+    // Deleting only stops spend, so the kill switch doesn't block it.
+    const failed: Failure[] = [];
+    let done = 0;
+    for (const id of input.ids) {
+      try {
+        const readable = await asUser(session.userId, (tx) => tx.execute(sql`select 1 from ${sql.raw(MIRROR[input.level])} where id = ${id}`));
+        if (!(readable as unknown as unknown[]).length) throw new UserError("Not found", "It may already be deleted. Refresh the table.");
+        await logged(session.userId, input.level, id, "delete", () => deleteMetaObject(getDb(), input.level, id));
+        done++;
+      } catch (e) {
+        failed.push(failureOf(id, e));
+      }
+    }
+    revalidatePath("/ads");
+    return summarize(done, failed, "Deleted");
   });
 }

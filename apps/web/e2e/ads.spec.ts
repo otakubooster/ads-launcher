@@ -154,3 +154,28 @@ test("Edit changes an ad set's name, schedule and audience on Meta, logged", asy
   expect(live.targeting.geo_locations.countries).toEqual(["GB", "IE"]);
   expect(live.targeting.age_min).toBe(25);
 });
+
+test("Delete works like Ads Manager: confirms, deletes on Meta with its children, and leaves the table", async ({ page }) => {
+  await page.goto("/ads?level=adsets");
+  const table = page.getByRole("region", { name: "Ads table" });
+  const row = table.getByRole("row", { name: /Lumen_UK_routine_4/ }).first();
+  await row.hover();
+  await row.getByRole("button", { name: "Delete" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/Their ads are deleted too/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Delete ad set" }).click();
+  await expect(page.getByText("Deleted 1 item.")).toBeVisible({ timeout: 30_000 });
+  await expect(table.getByRole("row", { name: /Lumen_UK_routine_4/ })).toHaveCount(0);
+  const objects = await fakeObjects();
+  const set = objects.find((o) => o.type === "adset" && o.name === "Lumen_UK_routine_4")!;
+  expect(set.status).toBe("DELETED");
+  expect(objects.filter((o) => o.type === "ad" && (o as unknown as { adset_id: string }).adset_id === set.id).every((o) => o.status === "DELETED")).toBe(true);
+
+  // Bulk: select a campaign and delete it from the selection bar.
+  await page.goto("/ads");
+  await table.getByRole("checkbox", { name: "Select Lumen_UK_Scaling" }).check();
+  await page.getByRole("toolbar", { name: "Bulk actions" }).getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("dialog").getByText(/Their ad sets and ads are deleted too/)).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete campaign" }).click();
+  await expect(table.getByRole("button", { name: "Lumen_UK_Scaling", exact: true })).toHaveCount(0, { timeout: 30_000 });
+});
