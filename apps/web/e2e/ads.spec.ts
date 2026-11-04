@@ -179,3 +179,23 @@ test("Delete works like Ads Manager: confirms, deletes on Meta with its children
   await page.getByRole("dialog").getByRole("button", { name: "Delete campaign" }).click();
   await expect(table.getByRole("button", { name: "Lumen_UK_Scaling", exact: true })).toHaveCount(0, { timeout: 30_000 });
 });
+
+test("Duplicate an ad set into a new campaign, like Ads Manager", async ({ page }) => {
+  await page.goto("/ads?level=adsets");
+  const table = page.getByRole("region", { name: "Ads table" });
+  const row = table.getByRole("row", { name: /Lumen_UK_glow_1/ }).first();
+  await row.hover();
+  await row.getByRole("button", { name: "Duplicate" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("New campaign").check();
+  await expect(dialog.getByLabel("New campaign name")).toHaveValue("Lumen_UK_Prospecting - Copy");
+  await dialog.getByLabel("New campaign name").fill("Lumen UK scale test");
+  await dialog.getByRole("button", { name: "Duplicate" }).click();
+  await expect(page.getByText('Created 1 copy in the new campaign "Lumen UK scale test", paused.')).toBeVisible({ timeout: 30_000 });
+
+  const objects = await fakeObjects();
+  const campaign = objects.find((o) => o.type === "campaign" && o.name === "Lumen UK scale test")!;
+  expect(campaign.status).toBe("PAUSED");
+  const sets = objects.filter((o) => o.type === "adset" && (o as unknown as { campaign_id: string }).campaign_id === campaign.id);
+  expect(sets.map((s) => [s.name, s.status])).toEqual([["Lumen_UK_glow_1 - Copy", "PAUSED"]]);
+});
