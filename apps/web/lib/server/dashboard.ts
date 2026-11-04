@@ -68,13 +68,15 @@ export async function loadDashboard(userId: string, filters: Filters): Promise<D
       from account_insights_daily
       where date between ${since}::date and greatest(${range.until}::date, current_date + 1) ${scope("ad_account_id", filters.accountIds)}`)) as unknown as Raw[];
     const top = (await tx.execute(sql`
-      select (array_agg(a.id order by a.created_at))[1] as id, (array_agg(a.name order by a.created_at))[1] as name,
+      select (array_agg(a.id order by a.status = 'DELETED', a.created_at))[1] as id, (array_agg(a.name order by a.status = 'DELETED', a.created_at))[1] as name,
         (array_agg(a.thumbnail_url) filter (where a.thumbnail_url is not null))[1] as thumbnail_url,
         acc.name as account_name, acc.currency,
         sum(i.spend)::float8 spend, sum(i.purchase_value)::float8 value, sum(i.video_3s_plays)::float8 plays, sum(i.impressions)::float8 impressions
       from insights_daily i join meta_ads a on a.id = i.ad_id join ad_accounts acc on acc.id = a.ad_account_id
       where i.date between ${range.since}::date and ${range.until}::date ${scope("a.ad_account_id", filters.accountIds)}
       group by coalesce(a.creative_id, a.id::text), acc.name, acc.currency
+      -- Deleted ads still count toward their creative's spend, but the link opens a live ad.
+      having bool_or(a.status <> 'DELETED')
       order by sum(i.spend) desc limit 40`)) as unknown as { id: string; name: string; thumbnail_url: string | null; account_name: string; currency: string; spend: number; value: number; plays: number; impressions: number }[];
     const connections = (await tx.execute(sql`select business_name, status from meta_connections where status <> 'active'`)) as unknown as { business_name: string; status: string }[];
     const launches = (await tx.execute(sql`

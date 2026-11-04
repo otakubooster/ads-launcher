@@ -5,6 +5,8 @@ import { AdsView, type SavedView } from "@/components/table/ads-view";
 import { parseFilters, resolveRanges } from "@/lib/filters";
 import { loadAccountBudgets, loadAdsRows, type Level } from "@/lib/server/ads";
 import { requireSession } from "@/lib/server/auth";
+import { historyGap } from "@/lib/server/history";
+import { HistoryBanner } from "@/components/shell/history-banner";
 import { attachReach } from "@/lib/server/reach";
 import { asUser } from "@/lib/server/db";
 
@@ -33,10 +35,16 @@ export default async function AdsPage({ searchParams }: { searchParams: Promise<
   ]);
 
   const withReach = await attachReach(rows, level, range);
+  const gap = await historyGap(session.userId, filters.accountIds, [range.since, previous?.since ?? range.since].sort()[0]!);
 
   return (
     <>
       <h1 className="sr-only">Ads</h1>
+      {gap && (
+        <div className="mb-3">
+          <HistoryBanner gap={gap} until={range.until} accountIds={filters.accountIds} />
+        </div>
+      )}
       <AdsView
         key={level}
         level={level}

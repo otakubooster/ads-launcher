@@ -8,7 +8,9 @@ import { PageHeader } from "@/components/page-header";
 import { StatusDot } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EMPTY, formatMoney, formatNumber, formatPercent, formatRoas } from "@/lib/format";
-import { filterQuery, parseFilters } from "@/lib/filters";
+import { filterQuery, parseFilters, resolveRanges } from "@/lib/filters";
+import { HistoryBanner } from "@/components/shell/history-banner";
+import { historyGap } from "@/lib/server/history";
 import { accountStatus } from "@/lib/meta-labels";
 import { ratios } from "@/lib/metrics";
 import { requireSession } from "@/lib/server/auth";
@@ -25,6 +27,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const params = await searchParams;
   const filters = parseFilters(params);
   const d = await loadDashboard(session.userId, filters);
+  const { range, previous } = resolveRanges(filters);
+  const gap = await historyGap(session.userId, filters.accountIds, [range.since, previous?.since ?? range.since].sort()[0]!);
   const query = filterQuery(new URLSearchParams(Object.entries(params).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : []))));
 
   if (!d.hasAccounts) {
@@ -56,6 +60,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         title="Dashboard"
         description={`All money in ${d.currency}${d.fxSource === "env" || d.fxSource === "cache" || d.fxSource === "ecb" ? " at current exchange rates" : ""}.`}
       />
+      {gap && (
+        <div className="mb-4">
+          <HistoryBanner gap={gap} until={range.until} accountIds={filters.accountIds} />
+        </div>
+      )}
       {d.excluded.length > 0 && (
         <p role="status" className="mb-4 rounded-control border border-amber-6 bg-amber-2 px-3 py-2 text-ui text-amber-11">
           {d.excluded.map((a) => `${a.name} (${a.currency})`).join(", ")} {d.excluded.length === 1 ? "isn't" : "aren't"} included: no exchange rate to {d.currency} is

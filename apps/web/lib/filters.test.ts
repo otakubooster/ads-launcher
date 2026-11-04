@@ -27,4 +27,17 @@ describe("filters in the URL", () => {
       today: "2026-10-30",
     });
   });
+
+  it("reads and writes a custom range like Ads Manager's calendar", () => {
+    const f = parseFilters({ range: "2026-10-01..2026-10-15", compare: "0" });
+    expect(f).toEqual({ preset: "custom", custom: { since: "2026-10-01", until: "2026-10-15" }, compare: false, accountIds: [] });
+    expect(writeFilters(new URLSearchParams(), f).get("range")).toBe("2026-10-01..2026-10-15");
+    expect(resolveRanges({ ...f, compare: true }, "2026-11-04")).toMatchObject({
+      range: { since: "2026-10-01", until: "2026-10-15" },
+      previous: { since: "2026-09-16", until: "2026-09-30" },
+    });
+    // Backwards or malformed ranges fall back to the default.
+    expect(parseFilters({ range: "2026-10-15..2026-10-01" }).preset).toBe("last_7d");
+    expect(parseFilters({ range: "2026-13-01..2026-13-02" }).preset).toBe("last_7d");
+  });
 });

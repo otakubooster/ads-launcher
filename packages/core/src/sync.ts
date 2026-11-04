@@ -304,7 +304,38 @@ export async function syncInsights(db: AnyDb, adAccountId: string, range: { sinc
     ? { client, metaAccountId: (await db.select({ m: adAccounts.metaId }).from(adAccounts).where(eq(adAccounts.id, adAccountId)))[0]!.m }
     : await clientForAdAccount(db, adAccountId);
   const rows = await collect(meta.paginate<GraphInsight>(`${metaAccountId}/insights`, insightParams(range.since, range.until), { accountId: metaAccountId }));
-  return storeInsights(db, adAccountId, rows);
+  const stored = await storeInsights(db, adAccountId, rows);
+  await markSyncedSince(db, adAccountId, range.since);
+  return stored;
+}
+
+/** Remembers how far back this account's insights go, so older ranges can offer "Load history". */
+async function markSyncedSince(db: AnyDb, adAccountId: string, since: string) {
+  await db
+    .update(adAccounts)
+    .set({ insightsSyncedSince: sql`least(coalesce(${adAccounts.insightsSyncedSince}, ${since}::date), ${since}::date)` })
+    .where(eq(adAccounts.id, adAccountId));
+}
+
+const DAY = 86_400_000;
+const shift = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
+
+/**
+ * Fetches insights older than what the account has, back to `since`, in 30-day
+ * chunks (newest first) until `deadline`. Returns how far back it got.
+ */
+export async function loadInsightsHistory(db: AnyDb, adAccountId: string, since: string, opts: { deadline?: number; today: string; client?: MetaClient }) {
+  const [acc] = await db.select({ from: adAccounts.insightsSyncedSince }).from(adAccounts).where(eq(adAccounts.id, adAccountId));
+  let until = acc?.from ? shift(String(acc.from), -1) : opts.today;
+  let chunks = 0;
+  while (until >= since) {
+    if (chunks > 0 && opts.deadline && Date.now() > opts.deadline) break;
+    const from = [shift(until, -29), since].sort().at(-1)!;
+    await syncInsights(db, adAccountId, { since: from, until }, opts.client);
+    chunks++;
+    until = shift(from, -1);
+  }
+  return { reached: shift(until, 1), complete: until < since, chunks };
 }
 
 /** Async report run for the nightly 28-day backfill; polls until Meta finishes. */
@@ -327,7 +358,9 @@ export async function backfillInsights(
     await sleep(pollMs);
   }
   const rows = await collect(meta.paginate<GraphInsight>(`${runId}/insights`, { limit: 500 }, opts));
-  return storeInsights(db, adAccountId, rows);
+  const stored = await storeInsights(db, adAccountId, rows);
+  await markSyncedSince(db, adAccountId, range.since);
+  return stored;
 }
 
 /** Accounts with a working connection, for the scheduler. */

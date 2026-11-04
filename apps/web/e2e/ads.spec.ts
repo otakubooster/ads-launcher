@@ -98,7 +98,7 @@ test("the Ads Manager column set shows results, reach, frequency, settings and f
   // The fake Meta account delivers today, so look at today.
   await page.goto("/ads?range=today");
   const table = page.getByRole("region", { name: "Ads table" });
-  for (const header of ["Results", "Cost per result", "Amount spent", "Reach", "Frequency", "CPM", "Ends", "Attribution setting", "Bid strategy", "Purchase ROAS", "CPC (link)", "CTR (link)", "Adds to cart", "Checkouts initiated"]) {
+  for (const header of ["Results", "Cost per result", "Amount spent", "Reach", "Frequency", "CPM", "Ends", "Attribution setting", "Bid strategy", "Purchase ROAS", "CPC (link)", "CTR (link)", "Hook rate", "Adds to cart", "Checkouts initiated"]) {
     await expect(table.locator("thead").getByRole("button", { name: header, exact: true })).toBeVisible();
   }
   const row = table.getByRole("row", { name: /Lumen_US_Prospecting/ });

@@ -5,7 +5,7 @@ import { FAKE_BUSINESS_ID, createFakeGraph } from "@fahd/meta/testing";
 import { encryptToken } from "@fahd/shared";
 import { count, eq, sum } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { backfillInsights, clientForAdAccount, mapInsights, syncAccountObjects, syncConnectionAssets, syncInsights, syncableAccounts } from "../src";
+import { backfillInsights, clientForAdAccount, loadInsightsHistory, mapInsights, syncAccountObjects, syncConnectionAssets, syncInsights, syncableAccounts } from "../src";
 
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -65,6 +65,20 @@ describe("insights", () => {
     expect(await n(insightsDaily)).toBe(before + stored);
     const [total] = await db.select({ spend: sum(accountInsightsDaily.spend).mapWith(Number) }).from(accountInsightsDaily);
     expect(total!.spend).toBeGreaterThan(0);
+  });
+
+  it("remembers how far back insights go and loads older history in 30-day chunks", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    await syncInsights(db, accountId, { since: today, until: today });
+    const marker = async () => String((await db.select({ m: adAccounts.insightsSyncedSince }).from(adAccounts).where(eq(adAccounts.id, accountId)))[0]!.m);
+    const start = await marker();
+    expect(start <= today).toBe(true);
+    const since = new Date(Date.parse(`${start}T00:00:00Z`) - 70 * 86_400_000).toISOString().slice(0, 10);
+    const res = await loadInsightsHistory(db, accountId, since, { today });
+    expect(res).toMatchObject({ complete: true, chunks: 3, reached: since });
+    expect(await marker()).toBe(since);
+    // Already loaded: nothing more to fetch.
+    expect((await loadInsightsHistory(db, accountId, since, { today })).chunks).toBe(0);
   });
 
   it("lists only accounts with a working connection", async () => {

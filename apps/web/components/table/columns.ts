@@ -152,6 +152,7 @@ export const PRESETS: Record<"adsManager" | "performance" | "creative" | "delive
     "roas",
     "cpc",
     "ctr",
+    "hookRate",
     "addToCart",
     "checkouts",
   ],

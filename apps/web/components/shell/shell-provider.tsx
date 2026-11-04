@@ -3,7 +3,7 @@
 import * as React from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { filterQuery, parseFilters, writeFilters, type Filters } from "@/lib/filters";
-import type { DatePresetId } from "@/lib/date-range";
+import type { DatePresetId, DateRange } from "@/lib/date-range";
 import type { ScopeAccount } from "@/lib/scope";
 import { SIDEBAR_COOKIE } from "@/lib/sidebar";
 
@@ -24,8 +24,11 @@ type ShellState = {
   accounts: ScopeAccount[];
   selectedAccountIds: string[];
   setSelectedAccountIds: (ids: string[]) => void;
-  datePreset: DatePresetId;
+  datePreset: DatePresetId | "custom";
   setDatePreset: (preset: DatePresetId) => void;
+  /** Ads Manager's custom range: inclusive ISO dates. */
+  customRange: DateRange | null;
+  setCustomRange: (range: DateRange) => void;
   compare: boolean;
   setCompare: (compare: boolean) => void;
   /** "?range=…" to append to in-app links so filters carry across pages. */
@@ -68,6 +71,7 @@ export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, 
   const searchParams = useSearchParams();
   const filters = parseFilters(searchParams);
   const { preset: datePreset, compare, accountIds: selectedAccountIds } = filters;
+  const customRange = filters.custom ?? null;
 
   const setFilters = React.useCallback(
     (patch: Partial<Filters>) => {
@@ -78,7 +82,8 @@ export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, 
     [router, pathname, searchParams],
   );
   const setSelectedAccountIds = React.useCallback((accountIds: string[]) => setFilters({ accountIds }), [setFilters]);
-  const setDatePreset = React.useCallback((preset: DatePresetId) => setFilters({ preset }), [setFilters]);
+  const setDatePreset = React.useCallback((preset: DatePresetId) => setFilters({ preset, custom: null }), [setFilters]);
+  const setCustomRange = React.useCallback((custom: DateRange) => setFilters({ preset: "custom", custom }), [setFilters]);
   const setCompare = React.useCallback((value: boolean) => setFilters({ compare: value }), [setFilters]);
   const query = filterQuery(searchParams);
 
@@ -102,6 +107,8 @@ export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, 
       setSelectedAccountIds,
       datePreset,
       setDatePreset,
+      customRange,
+      setCustomRange,
       compare,
       setCompare,
       query,
@@ -111,7 +118,7 @@ export function ShellProvider({ defaultCollapsed, user, accounts, lastSyncedAt, 
       pendingApprovals,
       user,
     }),
-    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, setSelectedAccountIds, datePreset, setDatePreset, compare, setCompare, query, accounts, lastSyncedAt, usagePct, killSwitchOn, pendingApprovals, user],
+    [sidebarCollapsed, setSidebarCollapsed, commandOpen, shortcutsOpen, mobileNavOpen, selectedAccountIds, setSelectedAccountIds, datePreset, setDatePreset, customRange, setCustomRange, compare, setCompare, query, accounts, lastSyncedAt, usagePct, killSwitchOn, pendingApprovals, user],
   );
 
   return <ShellContext.Provider value={value}>{children}</ShellContext.Provider>;

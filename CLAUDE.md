@@ -199,3 +199,8 @@ everything created paused. Screens checked in light and dark against the spec.
   (isEditorLaunch). /create/[id] (components/editor/*) autosaves through saveEditor; publishEditor
   validates again, createLaunchItems with per-object settings (core campaignParams/adsetParams), then
   the normal runner and launch log. /launch/[draftId] redirects editor drafts to /create/[id].
+- Dates: ?range= is a preset id or a custom "YYYY-MM-DD..YYYY-MM-DD" (lib/date-range parseCustomRange,
+  Filters.preset "custom"). The picker (components/shell/date-range-picker.tsx) drafts until Update.
+  ad_accounts.insights_synced_since marks how far back insights go (set by syncInsights/backfillInsights);
+  ranges reaching earlier show HistoryBanner → loadHistoryAction → core loadInsightsHistory (30-day chunks,
+  ~45 s per click).
