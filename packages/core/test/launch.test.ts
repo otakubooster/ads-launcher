@@ -185,6 +185,24 @@ describe("runLaunch", () => {
     expect(after.filter((i) => i.level === "ad").every((i) => i.status === "done")).toBe(true);
   });
 
+  it("names the advertiser and payer on ad sets that reach the EU (Meta's suggestion, or the preset's)", async () => {
+    const small = { ...draft(), destination: { ...draft().destination, countries: ["DE"] }, creatives: { groups: groups.slice(0, 1) } };
+    const first = await newLaunch(small);
+    expect((await runLaunch(db, storageFromEnv(), first.launchId, fast)).status).toBe("done");
+    expect(objects("adset").at(-1)).toMatchObject({ dsa_beneficiary: "Lumen Ltd", dsa_payor: "Lumen Ltd" });
+
+    await db.update(presets).set({ dsaBeneficiary: "Lumen Labs GmbH", dsaPayor: "Lumen Holdings" }).where(eq(presets.id, presetId));
+    const second = await newLaunch({ ...small, structure: { ...small.structure } });
+    expect((await runLaunch(db, storageFromEnv(), second.launchId, fast)).status).toBe("done");
+    expect(objects("adset").at(-1)).toMatchObject({ dsa_beneficiary: "Lumen Labs GmbH", dsa_payor: "Lumen Holdings" });
+    await db.update(presets).set({ dsaBeneficiary: null, dsaPayor: null }).where(eq(presets.id, presetId));
+
+    // Outside the EU nothing extra is sent.
+    const us = await newLaunch({ ...draft(), creatives: { groups: groups.slice(0, 1) } });
+    await runLaunch(db, storageFromEnv(), us.launchId, fast);
+    expect(objects("adset").at(-1)!.dsa_beneficiary).toBeUndefined();
+  });
+
   it("adopts an object that already exists after an ambiguous attempt instead of creating it twice", async () => {
     const small = { ...draft(), creatives: { groups: groups.slice(0, 1) } };
     const { launchId, plan } = await newLaunch(small);

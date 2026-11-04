@@ -125,6 +125,13 @@ export function describeMetaError(err: MetaApiError): { title: string; detail: s
   const minutes = err.retryAfterMs ? Math.max(1, Math.ceil(err.retryAfterMs / 60_000)) : null;
   switch (err.kind) {
     case "validation":
+      // EU ads need a beneficiary and payer (Digital Services Act).
+      if (err.subcode === 3858081 || /no advertiser indicated/i.test(`${err.userTitle ?? ""} ${err.message}`))
+        return {
+          title: "EU ads need an advertiser and payer",
+          detail: "Ad sets that reach EU countries must say who the ads are for and who pays (Digital Services Act).",
+          fix: "Set \"Advertiser (EU)\" and \"Paid for by (EU)\" on the preset (Presets → edit), usually your business or brand name, then press Retry failed items.",
+        };
       // Creatives made by an app in Development mode can't run as ads (subcode 1885183).
       if (/development mode/i.test(`${err.message} ${err.userMessage ?? ""}`))
         return {

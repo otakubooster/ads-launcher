@@ -96,3 +96,10 @@ export function attributionLabel(spec: { event_type: string; window_days: number
     .sort((a, b) => a.order - b.order);
   return parts.length ? parts.map((p) => p.text).join(" or ") : null;
 }
+
+/** EU member states: Meta needs a beneficiary and payer on ad sets that reach them (Digital Services Act). */
+export const EU_COUNTRIES = ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"] as const;
+
+export function reachesEu(countries: readonly string[]) {
+  return countries.some((c) => (EU_COUNTRIES as readonly string[]).includes(c.toUpperCase()));
+}

@@ -190,6 +190,8 @@ export function createFakeGraph() {
     if (head?.startsWith("act_")) {
       if (!state.objects.has(head)) return [400, graphError(100, `Unsupported get request. Object with ID '${head}' does not exist`)];
       if (method === "GET" && edge === "instagram_accounts") return [200, page(list("instagram", head).map(strip))];
+      // Meta's suggested beneficiary/payer names for EU ads (Digital Services Act).
+      if (method === "GET" && edge === "dsa_recommendations") return [200, { data: [{ recommendations: [`${String(state.objects.get(head)!.name).split(" ")[0]} Ltd`] }] }];
       if (method === "GET" && edge === "adspixels") return [200, page(list("pixel", head).map(strip))];
       if (method === "GET" && (edge === "campaigns" || edge === "adsets" || edge === "ads")) {
         const filtering = (json("filtering") as { field: string; operator: string; value: string }[] | null) ?? [];
@@ -223,6 +225,11 @@ export function createFakeGraph() {
         if (params.status !== "PAUSED") return [400, graphError(100, "Fake Graph only accepts PAUSED creates")];
         if (!params.name) return [400, graphError(100, "Invalid parameter", { error_user_title: "Name missing", error_user_msg: "Give this object a name." })];
         const type = edge.slice(0, -1);
+        // Like Meta: an ad set reaching the EU must name its beneficiary and payer.
+        const EU = ["AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"];
+        const countries = (json("targeting") as { geo_locations?: { countries?: string[] } } | null)?.geo_locations?.countries ?? [];
+        if (type === "adset" && countries.some((c) => EU.includes(c)) && (!params.dsa_beneficiary || !params.dsa_payor))
+          return [400, graphError(100, "Invalid parameter", { error_subcode: 3858081, error_user_title: "No advertiser indicated", error_user_msg: "Enter the person or organization being promoted by an ad. Find out more at https://www.facebook.com/business/help/605021638170961/" })];
         const obj: Obj = { id: nextId(), type, account_id: head, effective_status: "PAUSED", created_time: new Date().toISOString() };
         for (const [k, v] of Object.entries(params)) obj[k] = json(k) ?? v;
         if (type === "ad") {
