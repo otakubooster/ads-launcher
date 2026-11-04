@@ -231,7 +231,8 @@ export function createFakeGraph() {
         if (type === "adset" && countries.some((c) => EU.includes(c)) && (!params.dsa_beneficiary || !params.dsa_payor))
           return [400, graphError(100, "Invalid parameter", { error_subcode: 3858081, error_user_title: "No advertiser indicated", error_user_msg: "Enter the person or organization being promoted by an ad. Find out more at https://www.facebook.com/business/help/605021638170961/" })];
         const obj: Obj = { id: nextId(), type, account_id: head, effective_status: "PAUSED", created_time: new Date().toISOString() };
-        for (const [k, v] of Object.entries(params)) obj[k] = json(k) ?? v;
+        // IDs stay strings, as Meta returns them (JSON.parse would turn "1202…" into a number).
+        for (const [k, v] of Object.entries(params)) obj[k] = k.endsWith("_id") ? v : (json(k) ?? v);
         if (type === "ad") {
           const creativeId = (obj.creative as { creative_id?: string })?.creative_id;
           const creative = creativeId ? state.objects.get(creativeId) : undefined;
@@ -307,8 +308,8 @@ export function createFakeGraph() {
     }
     if (method === "POST" && edge === "copies") {
       if (params.status_option !== "PAUSED") return [400, graphError(100, "Fake Graph only accepts PAUSED copies")];
-      const rename = json("rename_options") as { rename_suffix?: string } | null;
-      const suffix = rename?.rename_suffix ?? " - Copy";
+      const rename = json("rename_options") as { rename_suffix?: string; rename_strategy?: string } | null;
+      const suffix = rename?.rename_strategy === "NO_RENAME" ? "" : (rename?.rename_suffix ?? " - Copy");
       const now = new Date().toISOString();
       const clone = (src: Obj, patch: Partial<Obj>, top: boolean): Obj => {
         const c: Obj = { ...src, ...patch, id: nextId(), status: "PAUSED", effective_status: "PAUSED", created_time: now };
@@ -317,6 +318,14 @@ export function createFakeGraph() {
         return c;
       };
       const deep = params.deep_copy === "true" || (params.deep_copy as unknown) === true;
+      // Like Meta: one synchronous copy request may hold fewer than 3 objects in total.
+      if (deep) {
+        const sets = obj.type === "campaign" ? [...state.objects.values()].filter((o) => o.type === "adset" && o.campaign_id === obj.id && o.status !== "DELETED") : [];
+        const adsOf = (id: string) => [...state.objects.values()].filter((o) => o.type === "ad" && o.adset_id === id && o.status !== "DELETED").length;
+        const total = 1 + sets.length + (obj.type === "campaign" ? sets.reduce((n, s) => n + adsOf(s.id), 0) : obj.type === "adset" ? adsOf(obj.id) : 0);
+        if (total >= 3)
+          return [400, graphError(100, "Invalid parameter", { error_subcode: 1885194, error_user_title: "Copy request is too large", error_user_msg: "The number of ad objects you are trying to copy at this time is too large. The total number of ads, ad sets, and campaigns to copy at once must be fewer than 3." })];
+      }
       if (obj.type === "campaign") {
         const copy = clone(obj, {}, true);
         if (deep) {

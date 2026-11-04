@@ -1,5 +1,6 @@
 import { metaAdsets, metaAds, metaCampaigns } from "@fahd/db/schema";
 import { eq } from "drizzle-orm";
+import type { MetaClient } from "@fahd/meta";
 import { clientForAdAccount } from "./meta-client";
 import type { ObjectLevel } from "./objects";
 import { syncAccountObjects } from "./sync";
@@ -48,18 +49,10 @@ export async function duplicateObject(db: AnyDb, input: DuplicateInput): Promise
   }
 
   const { client, metaAccountId } = await clientForAdAccount(db, obj.adAccountId);
-  const params = {
-    status_option: "PAUSED",
-    rename_options: { rename_strategy: "ONLY_TOP_LEVEL_RENAME", rename_suffix: " - Copy" },
-    ...(input.level === "ad" ? {} : { deep_copy: true }),
-    ...(input.level === "adset" && destinationMetaId ? { campaign_id: destinationMetaId } : {}),
-    ...(input.level === "ad" && destinationMetaId ? { adset_id: destinationMetaId } : {}),
-  };
   const copies: DuplicateResult["copies"] = [];
   for (let i = 0; i < Math.min(Math.max(1, input.copies), 10); i++) {
-    const res = await client.post<Record<string, unknown>>(`${obj.metaId}/copies`, params, { accountId: metaAccountId });
-    const copiedId = String(res.copied_campaign_id ?? res.copied_adset_id ?? res.copied_ad_id ?? "");
-    copies.push({ copiedId, response: res });
+    const res = await copyTree(client, metaAccountId, input.level, obj.metaId, destinationMetaId);
+    copies.push({ copiedId: res.id, response: res.response });
   }
   await syncAccountObjects(db, obj.adAccountId);
   return { name: obj.name, metaId: obj.metaId, adAccountId: obj.adAccountId, copies };
@@ -99,4 +92,55 @@ export async function createDuplicateParent(db: AnyDb, input: { level: "adset" |
   const [row] = await db.select({ id: parentTable.id }).from(parentTable).where(eq(parentTable.metaId, metaId));
   if (!row) throw new Error("The new parent didn't sync");
   return { id: row.id, metaId, name, adAccountId: src.adAccountId, response: res };
+}
+
+const COPY = { status_option: "PAUSED" } as const;
+const RENAME = { rename_options: { rename_strategy: "ONLY_TOP_LEVEL_RENAME", rename_suffix: " - Copy" } } as const;
+const LIVE = (o: { status?: string }) => o.status !== "DELETED" && o.status !== "ARCHIVED";
+
+/**
+ * Meta's /copies refuses more than 2 objects per request ("Copy request is too large"),
+ * so the tree is copied one object at a time: the top object without its contents,
+ * then its ad sets, then their ads, children batched 50 per /batch call. Only the
+ * top object gets " - Copy"; everything is PAUSED.
+ */
+async function copyTree(client: MetaClient, accountId: string, level: "campaign" | "adset" | "ad", metaId: string, destinationMetaId?: string) {
+  const opts = { accountId };
+  if (level === "ad") {
+    const res = await client.post<{ copied_ad_id: string }>(`${metaId}/copies`, { ...COPY, ...RENAME, ...(destinationMetaId ? { adset_id: destinationMetaId } : {}) }, opts);
+    return { id: res.copied_ad_id, response: res };
+  }
+  if (level === "adset") {
+    const res = await client.post<{ copied_adset_id: string }>(`${metaId}/copies`, { ...COPY, ...RENAME, deep_copy: false, ...(destinationMetaId ? { campaign_id: destinationMetaId } : {}) }, opts);
+    const ads = await copyChildren(client, accountId, metaId, "ads", res.copied_adset_id);
+    return { id: res.copied_adset_id, response: { ...res, ads } };
+  }
+  const res = await client.post<{ copied_campaign_id: string }>(`${metaId}/copies`, { ...COPY, ...RENAME, deep_copy: false }, opts);
+  const sets = await copyChildren(client, accountId, metaId, "adsets", res.copied_campaign_id);
+  const ads: unknown[] = [];
+  for (const set of sets) if (set.sourceId && set.copiedId) ads.push(...(await copyChildren(client, accountId, set.sourceId, "ads", set.copiedId)));
+  return { id: res.copied_campaign_id, response: { ...res, adsets: sets, ads } };
+}
+
+/** Copies a parent's live ad sets or ads into `intoMetaId`, 50 per batch; failures are reported, not thrown. */
+async function copyChildren(client: MetaClient, accountId: string, parentMetaId: string, edge: "adsets" | "ads", intoMetaId: string) {
+  const children: { id: string; status?: string }[] = [];
+  for await (const c of client.paginate<{ id: string; status?: string }>(`${parentMetaId}/${edge}`, { fields: "id,status", limit: 200 }, { accountId })) if (LIVE(c)) children.push(c);
+  const out: { sourceId: string; copiedId: string | null; error?: string }[] = [];
+  for (let i = 0; i < children.length; i += 50) {
+    const slice = children.slice(i, i + 50);
+    const results = await client.batch<Record<string, string>>(
+      slice.map((c) => ({
+        method: "POST" as const,
+        relativeUrl: `${c.id}/copies`,
+        // Children keep their names, as in Ads Manager.
+        params: { ...COPY, rename_options: { rename_strategy: "NO_RENAME" }, ...(edge === "adsets" ? { deep_copy: false, campaign_id: intoMetaId } : { adset_id: intoMetaId }) },
+      })),
+      { accountId },
+    );
+    results.forEach((r, j) =>
+      out.push(r.ok ? { sourceId: slice[j]!.id, copiedId: String(r.body.copied_adset_id ?? r.body.copied_ad_id ?? "") || null } : { sourceId: slice[j]!.id, copiedId: null, error: r.error.message }),
+    );
+  }
+  return out;
 }

@@ -5,7 +5,7 @@ import { FAKE_BUSINESS_ID, createFakeGraph } from "@fahd/meta/testing";
 import { encryptToken } from "@fahd/shared";
 import { and, eq, like } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDuplicateParent, duplicateObject, syncAccountObjects, syncConnectionAssets } from "../src";
+import { clientForAdAccount, createDuplicateParent, duplicateObject, syncAccountObjects, syncConnectionAssets } from "../src";
 
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -75,6 +75,25 @@ describe("duplicateObject", () => {
     await duplicateObject(db, { level: "ad", id: ad!.id, copies: 2, destinationId: parent.id });
     expect(await db.select().from(metaAds).where(eq(metaAds.adsetId, parent.id))).toHaveLength(2);
   });
+
+  it("copies an ad set with 60 ads, past Meta's 3-objects-per-copy limit", async () => {
+    const [set] = await db.select().from(metaAdsets).where(eq(metaAdsets.name, "Lumen_US_glow_3"));
+    const { client } = await clientForAdAccount(db, accountId);
+    const opts = { accountId: "act_200000000000001" };
+    const creative = await client.post<{ id: string }>("act_200000000000001/adcreatives", { name: "bulk", object_story_spec: { page_id: "300000000000001" } }, opts);
+    for (let i = 0; i < 57; i++) await client.post("act_200000000000001/ads", { name: `bulk ad ${i}`, adset_id: set!.metaId, creative: { creative_id: creative.id }, status: "PAUSED" }, opts);
+    await syncAccountObjects(db, accountId);
+    const live = await db.select().from(metaAds).where(eq(metaAds.adsetId, set!.id));
+    expect(live.length).toBe(60);
+
+    await duplicateObject(db, { level: "adset", id: set!.id, copies: 1 });
+    const [copy] = await db.select().from(metaAdsets).where(eq(metaAdsets.name, "Lumen_US_glow_3 - Copy"));
+    const copied = await db.select().from(metaAds).where(eq(metaAds.adsetId, copy!.id));
+    expect(copied).toHaveLength(60);
+    expect(copied.every((a) => a.status === "PAUSED")).toBe(true);
+    // Only the ad set gets " - Copy"; its ads keep their names.
+    expect(copied.some((a) => a.name === "bulk ad 0")).toBe(true);
+  }, 60_000);
 
   it("refuses a destination in another ad account", async () => {
     const [set] = await db.select().from(metaAdsets).where(eq(metaAdsets.name, "Lumen_US_glow_1"));
