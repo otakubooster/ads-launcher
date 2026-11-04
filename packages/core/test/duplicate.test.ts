@@ -5,7 +5,7 @@ import { FAKE_BUSINESS_ID, createFakeGraph } from "@fahd/meta/testing";
 import { encryptToken } from "@fahd/shared";
 import { and, eq, like } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { duplicateObject, syncAccountObjects, syncConnectionAssets } from "../src";
+import { createDuplicateParent, duplicateObject, syncAccountObjects, syncConnectionAssets } from "../src";
 
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -51,6 +51,29 @@ describe("duplicateObject", () => {
     const [copy] = await db.select().from(metaCampaigns).where(eq(metaCampaigns.name, "Lumen_US_Prospecting - Copy"));
     expect(copy!.status).toBe("PAUSED");
     expect((await db.select().from(metaAdsets).where(eq(metaAdsets.campaignId, copy!.id))).length).toBeGreaterThan(0);
+  });
+
+  it("duplicates ad sets into a new campaign with the original's settings", async () => {
+    const [set] = await db.select().from(metaAdsets).where(eq(metaAdsets.name, "Lumen_US_routine_2"));
+    const [original] = await db.select().from(metaCampaigns).where(eq(metaCampaigns.id, set!.campaignId));
+    const parent = await createDuplicateParent(db, { level: "adset", sourceId: set!.id, name: "Lumen US Test Campaign" });
+    const [created] = await db.select().from(metaCampaigns).where(eq(metaCampaigns.id, parent.id));
+    expect(created).toMatchObject({ name: "Lumen US Test Campaign", status: "PAUSED", objective: original!.objective, dailyBudget: original!.dailyBudget });
+    // Empty until the copies go in.
+    expect(await db.select().from(metaAdsets).where(eq(metaAdsets.campaignId, parent.id))).toHaveLength(0);
+    await duplicateObject(db, { level: "adset", id: set!.id, copies: 1, destinationId: parent.id });
+    const inside = await db.select().from(metaAdsets).where(eq(metaAdsets.campaignId, parent.id));
+    expect(inside.map((s) => [s.name, s.status])).toEqual([["Lumen_US_routine_2 - Copy", "PAUSED"]]);
+    expect((await db.select().from(metaAds).where(eq(metaAds.adsetId, inside[0]!.id))).length).toBeGreaterThan(0);
+  });
+
+  it("duplicates ads into a new ad set in the same campaign", async () => {
+    const [ad] = await db.select().from(metaAds).where(like(metaAds.name, "hook3%")).limit(1);
+    const parent = await createDuplicateParent(db, { level: "ad", sourceId: ad!.id, name: "New test ad set" });
+    const [set] = await db.select().from(metaAdsets).where(eq(metaAdsets.id, parent.id));
+    expect(set).toMatchObject({ name: "New test ad set", status: "PAUSED", campaignId: ad!.campaignId });
+    await duplicateObject(db, { level: "ad", id: ad!.id, copies: 2, destinationId: parent.id });
+    expect(await db.select().from(metaAds).where(eq(metaAds.adsetId, parent.id))).toHaveLength(2);
   });
 
   it("refuses a destination in another ad account", async () => {

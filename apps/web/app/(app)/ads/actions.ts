@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  createDuplicateParent,
   deleteMetaObject,
   loadInsightsHistory,
   duplicateObject,
@@ -294,13 +295,39 @@ export async function loadDuplicateTargets(objectLevel: string, adAccountId: str
 }
 
 /** Ads Manager's Duplicate: copies are created paused, each logged with Meta's response. */
-export async function duplicateAction(objectLevel: string, objectIds: string[], options: { copies: number; destinationId?: string | null }) {
+export async function duplicateAction(objectLevel: string, objectIds: string[], options: { copies: number; destinationId?: string | null; newParentName?: string | null }) {
   return runAction(async () => {
     const session = await requireRole("owner", "admin", "buyer");
     const input = z
-      .object({ level, ids: z.array(z.uuid()).min(1).max(50), copies: z.number().int().min(1).max(10), destinationId: z.uuid().nullish() })
+      .object({
+        level,
+        ids: z.array(z.uuid()).min(1).max(50),
+        copies: z.number().int().min(1).max(10),
+        destinationId: z.uuid().nullish(),
+        newParentName: z.string().trim().min(1).max(400).nullish(),
+      })
       .parse({ level: objectLevel, ids: objectIds, ...options });
     await assertNotKilled();
+    // "New campaign" / "New ad set": made once from the first item's parent, then every copy goes in.
+    if (input.newParentName && input.level !== "campaign") {
+      const readable = await asUser(session.userId, (tx) => tx.execute(sql`select 1 from ${sql.raw(MIRROR[input.level])} where id = ${input.ids[0]!}`));
+      if (!(readable as unknown as unknown[]).length) throw new UserError("Not found", "Refresh the table and try again.");
+      const parentLevel = input.level === "adset" ? "campaign" : "adset";
+      const parent = await createDuplicateParent(getDb(), { level: input.level, sourceId: input.ids[0]!, name: input.newParentName });
+      await asUser(session.userId, (tx) =>
+        tx.insert(changeLog).values({
+          actorId: session.userId,
+          source: "ui",
+          entityLevel: parentLevel,
+          entityId: parent.metaId,
+          action: "duplicate",
+          before: { copiedFrom: input.level === "adset" ? "campaign of the duplicated ad set" : "ad set of the duplicated ad" },
+          after: { name: parent.name, status: "PAUSED", empty: true },
+          metaResponse: parent.response as object,
+        }),
+      );
+      input.destinationId = parent.id;
+    }
     const failed: Failure[] = [];
     let created = 0;
     for (const id of input.ids) {
@@ -326,7 +353,8 @@ export async function duplicateAction(objectLevel: string, objectIds: string[], 
       }
     }
     revalidatePath("/ads");
-    if (failed.length === 0) return { ok: true, message: `Created ${created} ${created === 1 ? "copy" : "copies"}, paused.`, data: { failed } };
+    const into = input.newParentName ? ` in the new ${input.level === "adset" ? "campaign" : "ad set"} "${input.newParentName}"` : "";
+    if (failed.length === 0) return { ok: true, message: `Created ${created} ${created === 1 ? "copy" : "copies"}${into}, paused.`, data: { failed } };
     return summarize(created, failed, "Created copies of");
   });
 }

@@ -64,3 +64,39 @@ export async function duplicateObject(db: AnyDb, input: DuplicateInput): Promise
   await syncAccountObjects(db, obj.adAccountId);
   return { name: obj.name, metaId: obj.metaId, adAccountId: obj.adAccountId, copies };
 }
+
+export type NewParent = { id: string; metaId: string; name: string; adAccountId: string; response: unknown };
+
+/**
+ * Ads Manager's "New campaign" (duplicating ad sets) or "New ad set" (duplicating ads):
+ * copies the original's parent without its contents (deep_copy false), paused, and
+ * names it. The copies then go into it with duplicateObject({ destinationId }).
+ */
+export async function createDuplicateParent(db: AnyDb, input: { level: "adset" | "ad"; sourceId: string; name: string }): Promise<NewParent> {
+  const name = input.name.trim();
+  if (!name) throw new Error("Name the new " + (input.level === "adset" ? "campaign" : "ad set"));
+  const child = input.level === "adset" ? metaAdsets : metaAds;
+  const [src] = await db
+    .select({ adAccountId: child.adAccountId, parentId: input.level === "adset" ? metaAdsets.campaignId : metaAds.adsetId })
+    .from(child)
+    .where(eq(child.id, input.sourceId));
+  if (!src) throw new Error(`${input.level} not found`);
+  const parentTable = input.level === "adset" ? metaCampaigns : metaAdsets;
+  const [parent] = await db.select({ metaId: parentTable.metaId }).from(parentTable).where(eq(parentTable.id, src.parentId));
+  if (!parent) throw new Error("Original parent not found");
+
+  const { client, metaAccountId } = await clientForAdAccount(db, src.adAccountId);
+  const opts = { accountId: metaAccountId };
+  const res = await client.post<Record<string, unknown>>(
+    `${parent.metaId}/copies`,
+    { status_option: "PAUSED", deep_copy: false, rename_options: { rename_strategy: "ONLY_TOP_LEVEL_RENAME", rename_suffix: " - Copy" } },
+    opts,
+  );
+  const metaId = String(res.copied_campaign_id ?? res.copied_adset_id ?? "");
+  if (!metaId) throw new Error("Meta didn't return the new " + (input.level === "adset" ? "campaign" : "ad set"));
+  await client.post(metaId, { name }, opts);
+  await syncAccountObjects(db, src.adAccountId);
+  const [row] = await db.select({ id: parentTable.id }).from(parentTable).where(eq(parentTable.metaId, metaId));
+  if (!row) throw new Error("The new parent didn't sync");
+  return { id: row.id, metaId, name, adAccountId: src.adAccountId, response: res };
+}
