@@ -332,6 +332,9 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
   let units = 0;
   const checkpoint = async () => {
     if (await shouldStop()) throw new StopLaunch("Kill switch");
+    // Cancelled from the launch log: the launch is no longer running.
+    const [now] = await db.select({ status: launches.status }).from(launches).where(eq(launches.id, launchId));
+    if (now && now.status !== "running" && now.status !== "queued") throw new StopLaunch("Cancelled");
     if (units++ > 0 && opts.deadline && Date.now() > opts.deadline) throw new Yield();
   };
   const startedAt = launch.startedAt ?? new Date();
@@ -742,6 +745,21 @@ async function finish(db: AnyDb, launchId: string, stopped = false): Promise<Run
     .returning({ name: launches.name });
   if (status === "failed" && !stopped) await sendAlert(db, ALERTS.launchFailed(launchId, launch?.name ?? "launch"));
   return { status: status === "running" ? "partial" : status, created, failed };
+}
+
+/**
+ * Cancel from the launch log: what isn't created yet won't be. Objects already
+ * created stay on Meta (paused). A step in flight stops at its next checkpoint.
+ */
+export async function cancelLaunch(db: AnyDb, launchId: string): Promise<{ cancelled: number }> {
+  const cancelled = await db
+    .update(launchItems)
+    .set({ status: "failed", errorCode: null, errorMessage: "Cancelled before it was created." })
+    .where(and(eq(launchItems.launchId, launchId), inArray(launchItems.status, ["pending", "running"])))
+    .returning({ id: launchItems.id });
+  await db.update(launches).set({ leaseUntil: null }).where(eq(launches.id, launchId));
+  await finish(db, launchId, true);
+  return { cancelled: cancelled.length };
 }
 
 /** Puts failed items back to pending so the runner tries them again (docs/spec.md → Retry failed items). */

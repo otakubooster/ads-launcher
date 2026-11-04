@@ -10,7 +10,7 @@ import { encryptToken } from "@fahd/shared";
 import { EMPTY_DRAFT, buildPlan, type LaunchDraft } from "@fahd/shared/launch-plan";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { acquireLaunchLease, activateLaunch, createLaunchItems, releaseLaunchLease, resetFailedItems, runLaunch, storageFromEnv, syncConnectionAssets } from "../src";
+import { acquireLaunchLease, activateLaunch, cancelLaunch, createLaunchItems, releaseLaunchLease, resetFailedItems, runLaunch, stalledLaunches, storageFromEnv, syncConnectionAssets } from "../src";
 
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -201,6 +201,22 @@ describe("runLaunch", () => {
     const us = await newLaunch({ ...draft(), creatives: { groups: groups.slice(0, 1) } });
     await runLaunch(db, storageFromEnv(), us.launchId, fast);
     expect(objects("adset").at(-1)!.dsa_beneficiary).toBeUndefined();
+  });
+
+  it("cancels a running launch: nothing more is created and it doesn't resume", async () => {
+    const { launchId } = await newLaunch({ ...draft(), creatives: { groups: groups.slice(0, 2) } });
+    // One short step creates the campaign, then yields.
+    const step = await runLaunch(db, storageFromEnv(), launchId, { ...fast, deadline: Date.now() - 1 });
+    expect(step.status).toBe("running");
+    const before = objects("ad").length;
+    const { cancelled } = await cancelLaunch(db, launchId);
+    expect(cancelled).toBeGreaterThan(0);
+    const [row] = await db.select().from(launches).where(eq(launches.id, launchId));
+    expect(["failed", "partial"]).toContain(row!.status);
+    expect(await stalledLaunches(db, 0)).not.toContain(launchId);
+    // A late step finds nothing to do.
+    await runLaunch(db, storageFromEnv(), launchId, fast);
+    expect(objects("ad").length).toBe(before);
   });
 
   it("adopts an object that already exists after an ambiguous attempt instead of creating it twice", async () => {
