@@ -45,6 +45,8 @@ type Preset = {
   conversionEvent: string;
   linkUrl: string;
   urlTags: string | null;
+  dsaBeneficiary: string | null;
+  dsaPayor: string | null;
   defaultCta: string;
   creativeFeatures: Record<string, string>;
   namingTemplateId: string | null;
@@ -424,6 +426,14 @@ function PresetDialog({
           <Field label="URL parameters" htmlFor="p-utm" hint="Meta fills {{campaign.name}} and {{ad.name}} at delivery.">
             <Input id="p-utm" name="urlTags" defaultValue={preset.urlTags ?? DEFAULT_URL_TAGS} className="font-mono text-label" />
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Advertiser (EU)" htmlFor="p-dsa-beneficiary" hint="Who the ads are for. Required by Meta for EU countries; empty uses Meta's suggestion, then the Page name.">
+              <Input id="p-dsa-beneficiary" name="dsaBeneficiary" defaultValue={preset.dsaBeneficiary ?? ""} placeholder="Your business or brand name" maxLength={200} />
+            </Field>
+            <Field label="Paid for by (EU)" htmlFor="p-dsa-payor" hint="Who pays for the ads. Empty: same as the advertiser.">
+              <Input id="p-dsa-payor" name="dsaPayor" defaultValue={preset.dsaPayor ?? ""} placeholder="Your business name" maxLength={200} />
+            </Field>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             {(["campaign", "adset", "ad"] as const).map((level) => (
               <Field key={level} label={`${level === "adset" ? "Ad set" : level.charAt(0).toUpperCase() + level.slice(1)} naming`} htmlFor={`p-naming-${level}`}>

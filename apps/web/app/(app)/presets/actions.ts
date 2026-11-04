@@ -39,6 +39,8 @@ const presetInput = z.object({
   conversionEvent: z.enum(CONVERSION_EVENTS),
   linkUrl: z.url("Enter the full landing page URL, starting with https://."),
   urlTags: z.string().trim().max(500),
+  dsaBeneficiary: z.string().trim().max(200).optional().transform((v) => v || null),
+  dsaPayor: z.string().trim().max(200).optional().transform((v) => v || null),
   defaultCta: z.enum(CTA_TYPES),
   namingTemplateId: optionalUuid,
   adsetNamingTemplateId: optionalUuid,

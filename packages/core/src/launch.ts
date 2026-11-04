@@ -1,7 +1,7 @@
-import { adAccounts, adsetTemplates, changeLog, creativeUploads, creatives, launchItems, launches, metaAds, metaAdsets, metaCampaigns, presets } from "@fahd/db/schema";
+import { adAccounts, adsetTemplates, changeLog, creativeUploads, creatives, launchItems, launches, metaAds, metaAdsets, metaAssets, metaCampaigns, presets } from "@fahd/db/schema";
 import type { AdsetTemplateSpec } from "@fahd/db/schema";
 import { MetaApiError, describeMetaError, setStatus, type BatchRequest, type MetaClient, type Params } from "@fahd/meta";
-import { CREATIVE_FEATURES } from "@fahd/shared/meta-options";
+import { CREATIVE_FEATURES, reachesEu } from "@fahd/shared/meta-options";
 import type { AdCreativeSettings, AdsetSettings, CampaignSettings, CopyBlock, LaunchDraft, LaunchPlan, Placement } from "@fahd/shared/launch-plan";
 import { and, asc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { ALERTS, sendAlert } from "./alerts";
@@ -218,7 +218,38 @@ const ATTRIBUTION: Record<AdsetSettings["attribution"], { event_type: string; wi
 };
 
 /** Ad set fields from the editor: conversion, budget and schedule, audience, placements. */
-export function adsetParams(name: string, campaignMetaId: string, s: AdsetSettings, campaign: CampaignSettings | undefined): Params {
+/** Who an EU ad set's ads are for and who pays (Digital Services Act), as Meta's ad set fields. */
+export type DsaParties = { beneficiary: string; payor: string };
+
+const dsaFields = (countries: readonly string[], dsa: DsaParties | null) =>
+  dsa && reachesEu(countries) ? { dsa_beneficiary: dsa.beneficiary, dsa_payor: dsa.payor } : {};
+
+/**
+ * The preset's names, else Meta's suggestion for the ad account
+ * (GET act_…/dsa_recommendations), else the Facebook Page's name.
+ */
+export async function resolveDsaParties(
+  client: MetaClient,
+  metaAccountId: string,
+  preset: { dsaBeneficiary?: string | null; dsaPayor?: string | null },
+  pageName: string | null,
+): Promise<DsaParties | null> {
+  let suggested: string | null = null;
+  if (!preset.dsaBeneficiary || !preset.dsaPayor) {
+    try {
+      const res = await client.get<{ data?: ({ recommendations?: string[] } | string)[] }>(`${metaAccountId}/dsa_recommendations`, {}, { accountId: metaAccountId });
+      const first = res.data?.[0];
+      suggested = (typeof first === "string" ? first : first?.recommendations?.[0]) ?? null;
+    } catch {
+      suggested = null;
+    }
+  }
+  const beneficiary = preset.dsaBeneficiary?.trim() || suggested || pageName;
+  if (!beneficiary) return null;
+  return { beneficiary, payor: preset.dsaPayor?.trim() || suggested || beneficiary };
+}
+
+export function adsetParams(name: string, campaignMetaId: string, s: AdsetSettings, campaign: CampaignSettings | undefined, dsa: DsaParties | null = null): Params {
   // Advantage+ audience treats age and gender as suggestions; tighter limits need the original audience.
   const advantage = s.ageMin <= 25 && s.ageMax === 65 && s.gender === "all";
   const targeting: Record<string, unknown> = {
@@ -252,6 +283,7 @@ export function adsetParams(name: string, campaignMetaId: string, s: AdsetSettin
     ...(s.bidAmount && strategy === "LOWEST_COST_WITH_MIN_ROAS" ? { bid_constraints: { roas_average_floor: s.bidAmount } } : {}),
     ...(s.startTime ? { start_time: s.startTime } : {}),
     ...(s.endTime ? { end_time: s.endTime } : {}),
+    ...dsaFields(s.countries, dsa),
     status: "PAUSED",
   };
 }
@@ -306,6 +338,14 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
   await db.update(launches).set({ status: "running", startedAt }).where(eq(launches.id, launchId));
   const { client, metaAccountId } = opts.client ? { client: opts.client, metaAccountId: account!.metaId } : await clientForAdAccount(db, account!.id);
   const meta = { accountId: metaAccountId };
+  // EU ad sets need a beneficiary and payer; worked out once, only when needed.
+  let dsa: DsaParties | null | undefined;
+  const dsaFor = async () => {
+    if (dsa !== undefined) return dsa;
+    const [page] = await db.select({ name: metaAssets.name }).from(metaAssets).where(and(eq(metaAssets.kind, "page"), eq(metaAssets.metaId, preset.pageId)));
+    dsa = await resolveDsaParties(client, metaAccountId, preset, page?.name ?? null);
+    return dsa;
+  };
 
   let items = await db.select().from(launchItems).where(eq(launchItems.launchId, launchId)).orderBy(asc(launchItems.createdAt));
   const byId = new Map(items.map((i) => [i.id, i]));
@@ -451,17 +491,23 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
           const [src] = await db.select({ metaId: metaAdsets.metaId }).from(metaAdsets).where(eq(metaAdsets.id, draft.destination.cloneAdsetId));
           const res = await client.post<{ copied_adset_id: string }>(`${src!.metaId}/copies`, { campaign_id: campaign.metaId, deep_copy: false, status_option: "PAUSED" }, meta);
           id = res.copied_adset_id;
-          await client.post(id, { name: p.name, ...(p.dailyBudget ? { daily_budget: p.dailyBudget } : {}) }, meta);
+          const countries = draft.destination.countries.length ? draft.destination.countries : [preset.market];
+          await client.post(id, { name: p.name, ...(p.dailyBudget ? { daily_budget: p.dailyBudget } : {}), ...dsaFields(countries, reachesEu(countries) ? await dsaFor() : null) }, meta);
           await logCreate("adset", id, p.name, res);
         } else if (!id && p.settings) {
-          const res = await client.post<{ id: string }>(`${metaAccountId}/adsets`, adsetParams(p.name, campaign.metaId, p.settings, (campaign.payload as CampaignPayload).settings), meta);
+          const res = await client.post<{ id: string }>(
+            `${metaAccountId}/adsets`,
+            adsetParams(p.name, campaign.metaId, p.settings, (campaign.payload as CampaignPayload).settings, reachesEu(p.settings.countries) ? await dsaFor() : null),
+            meta,
+          );
           id = res.id;
           await logCreate("adset", id, p.name, res);
         } else if (!id) {
           const spec = template?.spec as AdsetTemplateSpec | undefined;
+          const countries = draft.destination.countries.length ? draft.destination.countries : [preset.market];
           const targeting = {
             ...(spec?.targeting ?? {}),
-            geo_locations: { countries: draft.destination.countries.length ? draft.destination.countries : [preset.market] },
+            geo_locations: { countries },
             targeting_automation: { advantage_audience: 1 },
           };
           const res = await client.post<{ id: string }>(
@@ -479,6 +525,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
                 { event_type: "VIEW_THROUGH", window_days: 1 },
               ],
               ...(draft.structure.start === "scheduled" && draft.structure.startTime ? { start_time: draft.structure.startTime } : {}),
+              ...dsaFields(countries, reachesEu(countries) ? await dsaFor() : null),
               status: "PAUSED",
             },
             meta,

@@ -84,6 +84,9 @@ export const presets = pgTable(
     conversionEvent: text("conversion_event").notNull().default("PURCHASE"),
     linkUrl: text("link_url").notNull(),
     urlTags: text("url_tags"),
+    /** EU ads (Digital Services Act): who the ads are for and who pays. Empty: Meta's suggestion for the account, then the Page name. */
+    dsaBeneficiary: text("dsa_beneficiary"),
+    dsaPayor: text("dsa_payor"),
     defaultCta: text("default_cta").notNull().default("SHOP_NOW"),
     creativeFeatures: jsonb("creative_features").$type<CreativeFeatures>().notNull().default({}),
     /** Campaign-level naming template. */
