@@ -1,6 +1,6 @@
 "use server";
 
-import { activateLaunch, resetFailedItems } from "@fahd/core";
+import { activateLaunch, cancelLaunch, resetFailedItems } from "@fahd/core";
 import { launchItems, launches, presets } from "@fahd/db/schema";
 import type { LaunchDraft } from "@fahd/shared/launch-plan";
 import { and, eq } from "drizzle-orm";
@@ -80,4 +80,20 @@ export async function duplicateLaunch(id: string) {
     return row!.id;
   });
   redirect(`/launch/${copyId}`);
+}
+
+/** Cancel a queued or running launch: nothing more is created; what exists stays, paused. */
+export async function cancelLaunchAction(id: string): Promise<ActionResult> {
+  return runAction(async () => {
+    const session = await requireRole(...EDITORS);
+    const launchId = z.uuid().parse(id);
+    // RLS: the member must be able to see this launch.
+    const [launch] = await asUser(session.userId, (tx) => tx.select({ status: launches.status }).from(launches).where(eq(launches.id, launchId)));
+    if (!launch) throw new Error("Launch not found.");
+    if (launch.status !== "queued" && launch.status !== "running") return { ok: true, message: "This launch already finished." };
+    const { cancelled } = await cancelLaunch(getDb(), launchId);
+    revalidatePath(`/launches/${launchId}`);
+    revalidatePath("/launches");
+    return { ok: true, message: `Cancelled. ${cancelled} ${cancelled === 1 ? "item wasn't" : "items weren't"} created; anything already created stays paused on Meta.` };
+  });
 }

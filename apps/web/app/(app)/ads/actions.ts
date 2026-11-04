@@ -2,6 +2,7 @@
 
 import {
   deleteMetaObject,
+  loadInsightsHistory,
   duplicateObject,
   editAdCopy,
   editObject,
@@ -429,5 +430,30 @@ export async function deleteObjectsAction(objectLevel: string, objectIds: string
     }
     revalidatePath("/ads");
     return summarize(done, failed, "Deleted");
+  });
+}
+
+/** "Load history": fetches insights older than what's stored, back to `since`, within one request's time. */
+export async function loadHistoryAction(since: string, accountIds: string[]): Promise<ActionResult> {
+  return runAction(async () => {
+    await requireRole();
+    const from = z.iso.date().parse(since);
+    const ids = z.array(z.uuid()).max(200).parse(accountIds);
+    const accounts = (await syncableAccounts(getDb())).filter((a) => ids.length === 0 || ids.includes(a.id));
+    // Vercel stops functions at 60 s: stop starting new chunks after ~45 s; another click continues.
+    const deadline = Date.now() + 45_000;
+    let complete = true;
+    for (const a of accounts) {
+      if (Date.now() > deadline) {
+        complete = false;
+        break;
+      }
+      const res = await loadInsightsHistory(getDb(), a.id, from, { deadline, today: todayIn(a.timezone) });
+      complete &&= res.complete;
+    }
+    revalidatePath("/", "layout");
+    return complete
+      ? { ok: true, message: "History loaded from Meta." }
+      : { ok: true, message: "Loaded part of the history. Press Load history again to continue." };
   });
 }

@@ -92,6 +92,13 @@
       "when": 1793756274019,
       "tag": "0012_preset_dsa",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793807150151,
+      "tag": "0013_insights_synced_since",
+      "breakpoints": true
     }
   ]
 }

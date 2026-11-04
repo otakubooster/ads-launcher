@@ -3,9 +3,10 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, CircleAlert, Copy, CopyPlus, Loader2, Minus, Play, RotateCcw } from "lucide-react";
+import { Check, CircleAlert, Copy, CopyPlus, Loader2, Minus, Play, RotateCcw, X } from "lucide-react";
 import { toast } from "sonner";
-import { activateAll, duplicateLaunch, retryFailedItems } from "@/app/(app)/launches/actions";
+import { activateAll, cancelLaunchAction, duplicateLaunch, retryFailedItems } from "@/app/(app)/launches/actions";
+import { useConfirm } from "@/components/ui/confirm";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -102,7 +103,8 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
   const router = useRouter();
   const live = log.status === "queued" || log.status === "running";
   useLiveRefresh(live);
-  const [busy, setBusy] = React.useState<null | "retry" | "activate" | "duplicate">(null);
+  const [busy, setBusy] = React.useState<null | "retry" | "activate" | "duplicate" | "cancel">(null);
+  const { confirm: confirmCancel, dialog: cancelDialog } = useConfirm();
   const [confirm, setConfirm] = React.useState(false);
 
   const rows = ordered(log.items);
@@ -115,7 +117,7 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
   const canEdit = role !== "viewer";
   const allDone = log.items.length > 0 && log.items.every((i) => i.status === "done");
 
-  async function run(kind: "retry" | "activate", fn: () => Promise<ActionResult>) {
+  async function run(kind: "retry" | "activate" | "cancel", fn: () => Promise<ActionResult>) {
     setBusy(kind);
     const res = await fn();
     setBusy(null);
@@ -147,6 +149,23 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
             <Badge tone={pill.tone} data-testid="launch-status">
               {pill.label}
             </Badge>
+            {canEdit && live && (
+              <Button
+                variant="destructive"
+                disabled={busy !== null}
+                onClick={async () => {
+                  const ok = await confirmCancel({
+                    title: "Cancel this launch?",
+                    description: "Nothing more gets created. Anything already created stays on Meta, paused; delete it from the Ads page if you don't need it.",
+                    confirmLabel: "Cancel launch",
+                    destructive: true,
+                  });
+                  if (ok) await run("cancel", () => cancelLaunchAction(log.id));
+                }}
+              >
+                <X /> {busy === "cancel" ? "Cancelling…" : "Cancel launch"}
+              </Button>
+            )}
             {canEdit && failed > 0 && !live && (
               <Button disabled={busy !== null} onClick={() => run("retry", () => retryFailedItems(log.id))}>
                 <RotateCcw /> {busy === "retry" ? "Retrying…" : "Retry failed items"}
@@ -172,6 +191,7 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
           </>
         }
       />
+      {cancelDialog}
 
       <p className="mb-3 text-ui text-slate-11 tabular-nums" aria-live="polite">
         {done} of {objects.length} created · {ads.filter((a) => a.status === "done").length} of {ads.length} ads

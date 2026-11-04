@@ -57,6 +57,8 @@ export const adAccounts = pgTable(
     maxDailyBudget: money("max_daily_budget"),
     approvalThreshold: money("approval_threshold"),
     launchEnabled: boolean("launch_enabled").notNull().default(false),
+    /** The earliest day whose insights were fetched; ranges before it need "Load history". */
+    insightsSyncedSince: date("insights_synced_since"),
   },
   () => [
     check("ad_accounts_meta_id", sql`meta_id like 'act\\_%'`),
