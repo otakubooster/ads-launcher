@@ -41,7 +41,8 @@ export async function editorDefaults(tx: Tx, presetId: string): Promise<{ defaul
     .select({ kind: metaAssets.kind, metaId: metaAssets.metaId, name: metaAssets.name })
     .from(metaAssets)
     .where(and(eq(metaAssets.connectionId, row.account.connectionId), or(isNull(metaAssets.adAccountId), eq(metaAssets.adAccountId, row.account.id))));
-  const of = (kind: "page" | "instagram" | "pixel") => assets.filter((a) => a.kind === kind).map((a) => ({ id: a.metaId, name: a.name }));
+  // A Page can be both the business's and the account's: list it once.
+  const of = (kind: "page" | "instagram" | "pixel") => [...new Map(assets.filter((a) => a.kind === kind).map((a) => [a.metaId, { id: a.metaId, name: a.name }])).values()];
   return {
     brandId: p.brandId,
     brandName: row.brand,

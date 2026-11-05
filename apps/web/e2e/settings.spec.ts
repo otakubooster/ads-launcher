@@ -5,7 +5,7 @@ test("owner connects a Business Manager and every asset syncs (week 1 check)", a
   await signIn(page, "Fahd");
   await ensureConnected(page);
   await page.reload();
-  await expect(page.getByText("3 ad accounts · 3 pages · 3 Instagram · 3 pixels")).toBeVisible();
+  await expect(page.getByText("3 ad accounts · 7 pages · 3 Instagram · 3 pixels")).toBeVisible();
   for (const permission of ["ads_management", "ads_read", "business_management", "instagram_basic"]) {
     await expect(page.getByRole("list", { name: "Required permissions" }).getByText(permission)).toBeVisible();
   }

@@ -33,16 +33,23 @@ describe("checkToken", () => {
 
 describe("syncConnectionAssets", () => {
   it("stores ad accounts, pages, Instagram accounts and pixels (week 1 check)", async () => {
-    expect(await syncConnectionAssets(db, connectionId)).toEqual({ adAccounts: 3, pages: 3, instagram: 3, pixels: 3 });
-    expect((await db.select({ n: count() }).from(metaAssets))[0]!.n).toBe(9);
+    // Pages like Ads Manager's picker: 3 owned, 1 shared by a partner, 1 per ad account it alone may promote.
+    expect(await syncConnectionAssets(db, connectionId)).toEqual({ adAccounts: 3, pages: 7, instagram: 3, pixels: 3 });
+    expect((await db.select({ n: count() }).from(metaAssets))[0]!.n).toBe(13);
     expect((await db.select({ n: count() }).from(apiUsage))[0]!.n).toBeGreaterThan(0);
+    const pages = await db.select().from(metaAssets).where(eq(metaAssets.kind, "page"));
+    expect(pages.find((p) => p.name === "Partner page")!.adAccountId).toBeNull();
+    const [acc] = await db.select().from(adAccounts).where(eq(adAccounts.metaId, "act_200000000000001"));
+    expect(pages.find((p) => p.name === "Creator page 1")!.adAccountId).toBe(acc!.id);
+    // An owned Page the account can also promote is stored once, at business level.
+    expect(new Set(pages.map((p) => p.metaId)).size).toBe(pages.length);
   });
 
   it("is idempotent and keeps guardrails the user set", async () => {
     await db.update(adAccounts).set({ maxDailyBudget: 123_00 }).where(eq(adAccounts.metaId, "act_200000000000001"));
     await syncConnectionAssets(db, connectionId);
     expect((await db.select({ n: count() }).from(adAccounts))[0]!.n).toBe(3);
-    expect((await db.select({ n: count() }).from(metaAssets))[0]!.n).toBe(9);
+    expect((await db.select({ n: count() }).from(metaAssets))[0]!.n).toBe(13);
     const [acc] = await db.select().from(adAccounts).where(eq(adAccounts.metaId, "act_200000000000001"));
     expect(acc!.maxDailyBudget).toBe(123_00);
   });

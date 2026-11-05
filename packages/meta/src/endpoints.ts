@@ -51,6 +51,16 @@ export async function listOwnedPages(client: MetaClient, businessId: string) {
   return collect(client.paginate<GraphPage>(`${businessId}/owned_pages`, { fields: "id,name", limit: 200 }));
 }
 
+/** Pages another business shares with this one (partner access), usable in ads like owned ones. */
+export async function listClientPages(client: MetaClient, businessId: string) {
+  return collect(client.paginate<GraphPage>(`${businessId}/client_pages`, { fields: "id,name", limit: 200 }));
+}
+
+/** Every Page this ad account may run ads for: what Ads Manager lists under "Facebook Page". */
+export async function listPromotePages(client: MetaClient, adAccountId: string) {
+  return collect(client.paginate<GraphPage>(`${adAccountId}/promote_pages`, { fields: "id,name", limit: 200 }));
+}
+
 export async function listInstagramAccounts(client: MetaClient, adAccountId: string) {
   return collect(
     client.paginate<GraphInstagramAccount>(`${adAccountId}/instagram_accounts`, { fields: "id,username", limit: 200 }),

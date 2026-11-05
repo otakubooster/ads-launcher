@@ -186,10 +186,15 @@ export function createFakeGraph() {
     if (head === FAKE_BUSINESS_ID && edge === "owned_ad_accounts") return [200, page(list("adaccount").map(strip))];
     if (head === FAKE_BUSINESS_ID && edge === "client_ad_accounts") return [200, page([])];
     if (head === FAKE_BUSINESS_ID && edge === "owned_pages") return [200, page(list("page").map(strip))];
+    // A partner business shares one Page with this business (Business Settings → Pages → partner access).
+    if (head === FAKE_BUSINESS_ID && edge === "client_pages") return [200, page([{ id: "300000000000091", name: "Partner page" }])];
 
     if (head?.startsWith("act_")) {
       if (!state.objects.has(head)) return [400, graphError(100, `Unsupported get request. Object with ID '${head}' does not exist`)];
       if (method === "GET" && edge === "instagram_accounts") return [200, page(list("instagram", head).map(strip))];
+      // Pages the ad account may promote: the business's own plus one only this account can use.
+      if (method === "GET" && edge === "promote_pages")
+        return [200, page([...list("page").map((p) => ({ id: p.id, name: p.name })), { id: `30000000000008${head.slice(-1)}`, name: `Creator page ${head.slice(-1)}` }])];
       // Meta's suggested beneficiary/payer names for EU ads (Digital Services Act).
       if (method === "GET" && edge === "dsa_recommendations") return [200, { data: [{ recommendations: [`${String(state.objects.get(head)!.name).split(" ")[0]} Ltd`] }] }];
       if (method === "GET" && edge === "adspixels") return [200, page(list("pixel", head).map(strip))];

@@ -4,7 +4,9 @@ import {
   createMetaClient,
   getTokenPermissions,
   listBusinessAdAccounts,
+  listClientPages,
   listInstagramAccounts,
+  listPromotePages,
   listOwnedPages,
   listPixels,
   missingPermissions,
@@ -82,10 +84,21 @@ export async function syncConnectionAssets(db: AnyDb, connectionId: string, clie
   for (const a of accountRows) if (a.accountStatus !== 1) await sendAlert(db, ALERTS.accountDisabled(a.id, a.name, a.accountStatus));
 
   const assets: (typeof metaAssets.$inferInsert)[] = [];
-  for (const page of await listOwnedPages(meta, connection.businessId)) {
+  // Pages, like Ads Manager's Page picker: owned by the business, shared with it by partners,
+  // and any other Page an ad account may promote. A listing Meta refuses doesn't stop the rest.
+  const optional = async <T,>(fn: () => Promise<T[]>) => fn().catch(() => [] as T[]);
+  const businessPages = [...(await listOwnedPages(meta, connection.businessId)), ...(await optional(() => listClientPages(meta, connection.businessId)))];
+  const seenPages = new Set<string>();
+  for (const page of businessPages) {
+    if (seenPages.has(page.id)) continue;
+    seenPages.add(page.id);
     assets.push({ connectionId, kind: "page", metaId: page.id, name: page.name });
   }
   for (const account of accountRows) {
+    for (const page of await optional(() => listPromotePages(meta, account.metaId))) {
+      if (seenPages.has(page.id)) continue;
+      assets.push({ connectionId, adAccountId: account.id, kind: "page", metaId: page.id, name: page.name });
+    }
     for (const ig of await listInstagramAccounts(meta, account.metaId)) {
       assets.push({ connectionId, adAccountId: account.id, kind: "instagram", metaId: ig.id, name: ig.username });
     }
@@ -106,7 +119,7 @@ export async function syncConnectionAssets(db: AnyDb, connectionId: string, clie
 
   const summary = {
     adAccounts: accountRows.length,
-    pages: assets.filter((a) => a.kind === "page").length,
+    pages: new Set(assets.filter((a) => a.kind === "page").map((a) => a.metaId)).size,
     instagram: assets.filter((a) => a.kind === "instagram").length,
     pixels: assets.filter((a) => a.kind === "pixel").length,
   };
