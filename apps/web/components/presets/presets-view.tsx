@@ -330,7 +330,8 @@ function PresetDialog({
   const [features, setFeatures] = React.useState<Record<string, boolean>>(() =>
     Object.fromEntries(CREATIVE_FEATURES.map((f) => [f.key, preset.creativeFeatures?.[f.key] === "OPT_IN"])),
   );
-  const pages = assets.filter((a) => a.kind === "page");
+  // Business Pages (owned or shared) plus the ones this ad account may promote, each once.
+  const pages = [...new Map(assets.filter((a) => a.kind === "page" && (!a.adAccountId || a.adAccountId === accountId)).map((a) => [a.metaId, a])).values()];
   const igs = assets.filter((a) => a.kind === "instagram" && a.adAccountId === accountId);
   const pixels = assets.filter((a) => a.kind === "pixel" && a.adAccountId === accountId);
   const templates = (level: Naming["level"]) => naming.filter((n) => n.level === level);
