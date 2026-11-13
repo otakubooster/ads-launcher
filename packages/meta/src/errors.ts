@@ -33,7 +33,24 @@ export type GraphErrorBody = {
   error_user_title?: string;
   error_user_msg?: string;
   fbtrace_id?: string;
+  /** Meta often names the offending field here: { blame_field_specs: [["object_story_spec", "link_data", "link"]] } (object or JSON string). */
+  error_data?: unknown;
 };
+
+/** "object_story_spec › link_data › link" from Meta's blame_field_specs, when given. */
+export function blameFields(errorData: unknown): string[] {
+  let data = errorData;
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      return [];
+    }
+  }
+  const specs = (data as { blame_field_specs?: unknown } | null)?.blame_field_specs;
+  if (!Array.isArray(specs)) return [];
+  return specs.map((s) => (Array.isArray(s) ? s.join(" › ") : String(s))).filter(Boolean);
+}
 
 export class MetaApiError extends Error {
   override readonly name = "MetaApiError";
@@ -44,6 +61,8 @@ export class MetaApiError extends Error {
   readonly userTitle: string | null;
   readonly userMessage: string | null;
   readonly fbtraceId: string | null;
+  /** The request fields Meta blamed, if it said. */
+  readonly fields: string[];
   /** How long Meta asked us to wait, when the response said. */
   readonly retryAfterMs: number | null;
   /** True when a write may or may not have happened (timeout, dropped connection). */
@@ -58,6 +77,7 @@ export class MetaApiError extends Error {
     userTitle?: string | null;
     userMessage?: string | null;
     fbtraceId?: string | null;
+    fields?: string[];
     retryAfterMs?: number | null;
     ambiguous?: boolean;
     cause?: unknown;
@@ -70,6 +90,7 @@ export class MetaApiError extends Error {
     this.userTitle = init.userTitle ?? null;
     this.userMessage = init.userMessage ?? null;
     this.fbtraceId = init.fbtraceId ?? null;
+    this.fields = init.fields ?? [];
     this.retryAfterMs = init.retryAfterMs ?? null;
     this.ambiguous = init.ambiguous ?? false;
   }
@@ -116,6 +137,7 @@ export function errorFromGraph(
     userTitle: body?.error_user_title,
     userMessage: body?.error_user_msg,
     fbtraceId: body?.fbtrace_id,
+    fields: blameFields(body?.error_data),
     retryAfterMs: kind === "rate_limit" ? retryAfterMs : null,
   });
 }
@@ -141,7 +163,7 @@ export function describeMetaError(err: MetaApiError): { title: string; detail: s
         };
       return {
         title: err.userTitle ?? "Meta rejected a setting",
-        detail: err.userMessage ?? err.message,
+        detail: `${err.userMessage ?? err.message}${err.fields.length ? ` (Meta field: ${err.fields.join("; ")})` : ""}`,
         fix: "Change the highlighted setting and try again.",
       };
     case "rate_limit":

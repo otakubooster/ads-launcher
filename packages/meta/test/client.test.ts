@@ -5,6 +5,7 @@ import {
   Throttle,
   createMetaClient,
   describeMetaError,
+  errorFromGraph,
   getTokenPermissions,
   listBusinessAdAccounts,
   missingPermissions,
@@ -293,5 +294,16 @@ describe("describeMetaError for apps in Development mode", () => {
     const err = new MetaApiError({ kind: "validation", code: 100, subcode: 1885183, message: "Ads creative post was created by an app that is in development mode. It must be in public to create this ad." });
     expect(describeMetaError(err).title).toBe("Your Meta app is still in Development mode");
     expect(describeMetaError(err).fix).toContain("switch App Mode to Live");
+  });
+});
+
+describe("Meta's blamed field", () => {
+  it("is kept and shown, from an object or a JSON string", () => {
+    const body = { message: "Invalid parameter", code: 100, error_subcode: 1443048, error_user_title: "Required Field Is Missing", error_user_msg: "The link field is required.", error_data: '{"blame_field_specs":[["object_story_spec","video_data","call_to_action","value","link"]]}' };
+    const err = errorFromGraph(body, 400);
+    expect(err.fields).toEqual(["object_story_spec › video_data › call_to_action › value › link"]);
+    expect(describeMetaError(err).detail).toBe("The link field is required. (Meta field: object_story_spec › video_data › call_to_action › value › link)");
+    expect(errorFromGraph({ ...body, error_data: { blame_field_specs: [["link_urls"]] } }, 400).fields).toEqual(["link_urls"]);
+    expect(errorFromGraph({ message: "x", code: 100 }, 400).fields).toEqual([]);
   });
 });
