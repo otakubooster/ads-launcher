@@ -38,6 +38,20 @@ async function addVideo(brandId: string, fileName: string, ratio: "9:16" | "4:5"
   return row!.id;
 }
 
+async function addImage(brandId: string, fileName: string, ratio: "9:16" | "4:5") {
+  const storagePath = `creatives/${brandId}/${randomBytes(6).toString("hex")}/${fileName}`;
+  const full = path.join(process.env.STORAGE_DIR!, storagePath);
+  await mkdir(path.dirname(full), { recursive: true });
+  const bytes = randomBytes(4096);
+  await writeFile(full, bytes);
+  const [row] = await db
+    .insert(creatives)
+    .values({ brandId, fileName, storagePath, kind: "image", width: 1080, height: ratio === "9:16" ? 1920 : 1350, ratio, sizeBytes: bytes.length, sha256: randomBytes(32).toString("hex"), groupKey: fileName.split("_")[0]! })
+    .returning();
+  ctxCreatives[row!.id] = { ratio, kind: "image", fileName };
+  return row!.id;
+}
+
 async function newLaunch(draft: LaunchDraft) {
   const plan = buildPlan(draft, { brand: "Lumen", market: "US", date: `2026-10-${String(++n).padStart(2, "0")}`, currency: "USD", creatives: ctxCreatives });
   const [launch] = await db.insert(launches).values({ name: "test", presetId, createdBy: ownerId, mode: "new_campaign", structure: draft, status: "queued" }).returning();
@@ -231,6 +245,43 @@ describe("runLaunch", () => {
     await db.insert(apiUsage).values({ adAccountId: p!.adAccountId, accUtilPct: 40, recordedAt: new Date(Date.now() + 1000) });
     expect(await launchResumeState(db, launchId, { idleSeconds: 0 })).toMatchObject({ stalled: true, usagePct: 40, waitForUsage: false });
     await cancelLaunch(db, launchId);
+  });
+
+  describe("image ads with several files", () => {
+    const refuse = (at: "creative" | "ad" | null) =>
+      fetch(`${process.env.META_GRAPH_HOST}/__fake/refuse-image-asset-feed`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ at }) });
+    const imageDraft = async (key: string, ratios: ("9:16" | "4:5")[]) => {
+      const [brand] = await db.select().from(brands).where(eq(brands.name, "Lumen"));
+      const ids = [];
+      for (const [i, r] of ratios.entries()) ids.push(await addImage(brand!.id, `${key}_${i}_${r.replace(":", "x")}.png`, r));
+      return { ...draft(), creatives: { groups: [{ key, creativeIds: ids, angle: "img", hook: key, format: "static" }] } };
+    };
+    const lastCreative = () => objects("adcreative").at(-1) as unknown as { object_story_spec?: { link_data?: { link?: string; image_hash?: string } }; asset_feed_spec?: unknown };
+
+    it("uses the standard single-image format when the files are the same size", async () => {
+      const { launchId } = await newLaunch(await imageDraft("same", ["4:5", "4:5"]));
+      expect((await runLaunch(db, storageFromEnv(), launchId, fast)).status).toBe("done");
+      expect(lastCreative().asset_feed_spec).toBeUndefined();
+      expect(lastCreative().object_story_spec?.link_data?.link).toBe("https://lumen.example/us");
+    });
+
+    it("falls back to the standard format when Meta refuses the per-placement creative", async () => {
+      await refuse("creative");
+      const { launchId } = await newLaunch(await imageDraft("pairc", ["9:16", "4:5"]));
+      expect((await runLaunch(db, storageFromEnv(), launchId, fast)).status).toBe("done");
+      expect(lastCreative().object_story_spec?.link_data?.image_hash).toBeTruthy();
+      await refuse(null);
+    });
+
+    it("makes a standard creative when Meta refuses the ad, also on Retry for older failures", async () => {
+      await refuse("ad");
+      const { launchId } = await newLaunch(await imageDraft("paira", ["9:16", "4:5"]));
+      expect((await runLaunch(db, storageFromEnv(), launchId, fast)).status).toBe("done");
+      const ads = await db.select().from(launchItems).where(and(eq(launchItems.launchId, launchId), eq(launchItems.level, "ad")));
+      expect(ads.every((a) => a.status === "done")).toBe(true);
+      expect(lastCreative().object_story_spec?.link_data).toBeTruthy();
+      await refuse(null);
+    });
   });
 
   it("adopts an object that already exists after an ambiguous attempt instead of creating it twice", async () => {

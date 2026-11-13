@@ -10,6 +10,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
  *   POST /__fake/fail   {"match": "regex on METHOD path", "status": 400, "error": {...}, "times": 1}
  *   POST /__fake/reset  restore the initial state
  *   POST /__fake/refuse-feature  {"key": "music"}  refuse that Advantage+ creative feature key, like Meta
+ *   POST /__fake/refuse-image-asset-feed  {"at": "creative" | "ad" | null}  "The link field is required" for image asset feeds
  *   POST /__fake/app-mode  {"mode": "development"}  creatives made now can't become ads (Meta subcode 1885183)
  *   GET  /__fake/state  everything the fake holds
  */
@@ -84,7 +85,7 @@ function initialState() {
       }
     }
   });
-  return { objects, seq, failures: [] as Failure[], videoPolls: new Map<string, number>(), refusedFeatures: new Set<string>(), appMode: "live" as "live" | "development" };
+  return { objects, seq, failures: [] as Failure[], videoPolls: new Map<string, number>(), refusedFeatures: new Set<string>(), appMode: "live" as "live" | "development", refuseImageAssetFeed: null as null | "creative" | "ad" };
 }
 
 function thumb(seed: string) {
@@ -242,6 +243,7 @@ export function createFakeGraph() {
           const creativeId = (obj.creative as { creative_id?: string })?.creative_id;
           const creative = creativeId ? state.objects.get(creativeId) : undefined;
           if (!creative) return [400, graphError(100, "Invalid parameter", { error_user_title: "Creative not found", error_user_msg: "The ad's creative does not exist." })];
+          if (state.refuseImageAssetFeed === "ad" && (creative.asset_feed_spec as { images?: unknown[] } | undefined)?.images?.length) return [400, graphError(100, "Invalid parameter", { error_subcode: 1443048, error_user_title: "Required Field Is Missing", error_user_msg: "The link field is required. Please complete the field to continue." })];
           // Meta: a creative made while the app was in Development mode can't run as an ad.
           if (creative.made_in_development)
             return [400, graphError(100, "Invalid parameter", { error_subcode: 1885183, error_user_title: "Ads creative post was created by an app that is in development mode", error_user_msg: "Ads creative post was created by an app that is in development mode. It must be in public to create this ad." })];
@@ -253,6 +255,8 @@ export function createFakeGraph() {
         return [200, { id: obj.id }];
       }
       if (method === "POST" && edge === "adcreatives") {
+        const feed = json("asset_feed_spec") as { images?: unknown[] } | null;
+        if (state.refuseImageAssetFeed === "creative" && feed?.images?.length) return [400, graphError(100, "Invalid parameter", { error_subcode: 1443048, error_user_title: "Required Field Is Missing", error_user_msg: "The link field is required. Please complete the field to continue." })];
         // Like Meta: a feature key it doesn't know is refused (keys are set with POST /__fake/refuse-feature).
         const features = (json("degrees_of_freedom_spec") as { creative_features_spec?: Record<string, unknown> } | null)?.creative_features_spec ?? {};
         const refused = Object.keys(features).find((k) => state.refusedFeatures.has(k));
@@ -428,6 +432,11 @@ export function createFakeGraph() {
       if (url.pathname === "/__fake/reset") {
         state = initialState();
         reports.clear();
+        return send(200, { ok: true });
+      }
+      if (url.pathname === "/__fake/refuse-image-asset-feed") {
+        const at = (body as { at?: string }).at;
+        state.refuseImageAssetFeed = at === "creative" || at === "ad" ? at : null;
         return send(200, { ok: true });
       }
       if (url.pathname === "/__fake/app-mode") {

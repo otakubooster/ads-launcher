@@ -90,6 +90,12 @@ export function madeInDevelopmentMode(error: unknown) {
   return e?.subcode === 1885183 || /created by an app that is in development mode/i.test(`${e?.message ?? ""} ${e?.userMessage ?? ""}`);
 }
 
+/** Meta's "Required Field Is Missing: The link field is required" for an asset-feed creative. */
+export function needsSingleFormat(error: unknown) {
+  const e = error as { message?: string; userMessage?: string | null; userTitle?: string | null } | null;
+  return /link field is required/i.test(`${e?.message ?? ""} ${e?.userMessage ?? ""} ${e?.userTitle ?? ""}`);
+}
+
 export function buildCreativeParams(input: {
   name: string;
   pageId: string;
@@ -101,6 +107,8 @@ export function buildCreativeParams(input: {
   postId?: string;
   /** The link text shown instead of the URL (Ads Manager's "Display link"). */
   displayLink?: string | null;
+  /** Force the standard single-image/video format (fallback when Meta refuses an asset feed). */
+  single?: boolean;
 }): Params {
   const params: Params = { name: input.name };
   if (input.urlTags) params.url_tags = input.urlTags;
@@ -128,8 +136,10 @@ export function buildCreativeParams(input: {
   const feed = input.files.find((f) => f.ratio === "4:5") ?? input.files.find((f) => f.ratio === "1:1");
   const byPlacement = vertical && feed && vertical !== feed;
 
-  if (input.files.length === 1 && !multiText) {
-    const f = input.files[0]!;
+  // One file per placement isn't needed (same size, or no 9:16 + Feed pair) and one text of each:
+  // the standard format with the Feed-friendly file. Simpler, and what Ads Manager makes too.
+  if ((!byPlacement && !multiText) || input.single) {
+    const f = feed ?? vertical ?? input.files[0]!;
     params.object_story_spec =
       f.kind === "video"
         ? { ...identity, video_data: { video_id: f.videoId, image_url: f.thumbnailUrl, message: c.primaryTexts[0], title: c.headlines[0], link_description: c.descriptions[0], call_to_action: cta } }
@@ -546,6 +556,9 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
     // Advantage+ feature keys Meta refused in this run (its list changes between API
     // versions): they're dropped and the creative is sent again without them.
     const rejectedFeatures = new Set<string>();
+    // Creatives Meta refused in the per-placement/asset-feed format ("link field is required"):
+    // sent again in the standard format with the Feed file, so the ad still gets made.
+    const singleFallback = new Set<string>();
     const withoutRejected = (f: Record<string, "OPT_IN" | "OPT_OUT">) => Object.fromEntries(Object.entries(f).filter(([k]) => !rejectedFeatures.has(k)));
 
     // 4. Creatives and ads, batched per ad set: [creative, ad] pairs chained by name.
@@ -606,6 +619,7 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
                   features: withoutRejected(payload.creative?.features ?? draft.structure.features),
                   postId: payload.postId,
                   displayLink: payload.creative?.displayLink,
+                  single: singleFallback.has(creative.id),
                 }),
               });
             }
@@ -635,6 +649,11 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
                 await logCreate("creative", c.body.id, (creative.payload as CreativePayload).name, c.body);
               }
             } else {
+              if (needsSingleFormat(c.error) && !singleFallback.has(creative.id) && round < 11) {
+                singleFallback.add(creative.id);
+                retry.push({ creative, ad });
+                continue;
+              }
               const key = rejectedFeatureKey(c.error);
               // A newly refused feature (and not the last round): drop it and send this pair again.
               if (key && (!rejectedFeatures.has(key) || droppedNow.has(key)) && round < 11) {
@@ -652,6 +671,14 @@ export async function runLaunch(db: AnyDb, storage: Storage, launchId: string, o
               if (a.error.kind === "policy" || a.error.kind === "permission") {
                 await fail(ad, a.error);
                 throw new StopLaunch(a.error.message);
+              }
+              // The ad refused its asset-feed creative for a missing link: make a standard-format
+              // creative and send the pair again.
+              if (needsSingleFormat(a.error) && !singleFallback.has(creative.id) && round < 11) {
+                singleFallback.add(creative.id);
+                await save(creative, { status: "pending", metaId: null });
+                retry.push({ creative, ad });
+                continue;
               }
               await fail(ad, a.error);
               // A creative made while the Meta app was in Development mode can never run as an ad:
