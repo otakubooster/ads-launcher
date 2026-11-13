@@ -3,14 +3,14 @@ import { mkdtempSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { adAccounts, brands, changeLog, creatives, launchItems, launches, metaConnections, presets, users } from "@fahd/db/schema";
+import { adAccounts, apiUsage, brands, changeLog, creatives, launchItems, launches, metaConnections, presets, users } from "@fahd/db/schema";
 import { createTestDb } from "@fahd/db/testing";
 import { FAKE_BUSINESS_ID, createFakeGraph } from "@fahd/meta/testing";
 import { encryptToken } from "@fahd/shared";
 import { EMPTY_DRAFT, buildPlan, type LaunchDraft } from "@fahd/shared/launch-plan";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { acquireLaunchLease, activateLaunch, cancelLaunch, createLaunchItems, releaseLaunchLease, resetFailedItems, runLaunch, stalledLaunches, storageFromEnv, syncConnectionAssets } from "../src";
+import { acquireLaunchLease, activateLaunch, cancelLaunch, createLaunchItems, launchResumeState, releaseLaunchLease, resetFailedItems, runLaunch, stalledLaunches, storageFromEnv, syncConnectionAssets } from "../src";
 
 const fake = createFakeGraph();
 let db: Awaited<ReturnType<typeof createTestDb>>;
@@ -217,6 +217,20 @@ describe("runLaunch", () => {
     // A late step finds nothing to do.
     await runLaunch(db, storageFromEnv(), launchId, fast);
     expect(objects("ad").length).toBe(before);
+  });
+
+  it("knows when a stalled launch may resume: not while fresh Meta usage is 75%+", async () => {
+    const { launchId } = await newLaunch({ ...draft(), creatives: { groups: groups.slice(0, 1) } });
+    await runLaunch(db, storageFromEnv(), launchId, { ...fast, deadline: Date.now() - 1 });
+    // No step holds it (idle time 0 for the test).
+    await db.update(launches).set({ leaseUntil: null }).where(eq(launches.id, launchId));
+    const [p] = await db.select().from(presets).where(eq(presets.id, presetId));
+    await db.insert(apiUsage).values({ adAccountId: p!.adAccountId, accUtilPct: 80, recordedAt: new Date() });
+    expect(await launchResumeState(db, launchId, { idleSeconds: 0 })).toMatchObject({ stalled: true, usagePct: 80, waitForUsage: true });
+    // A newer reading below 75%: it may continue.
+    await db.insert(apiUsage).values({ adAccountId: p!.adAccountId, accUtilPct: 40, recordedAt: new Date(Date.now() + 1000) });
+    expect(await launchResumeState(db, launchId, { idleSeconds: 0 })).toMatchObject({ stalled: true, usagePct: 40, waitForUsage: false });
+    await cancelLaunch(db, launchId);
   });
 
   it("adopts an object that already exists after an ambiguous attempt instead of creating it twice", async () => {

@@ -1,6 +1,6 @@
 "use server";
 
-import { activateLaunch, cancelLaunch, resetFailedItems } from "@fahd/core";
+import { activateLaunch, cancelLaunch, launchResumeState, resetFailedItems } from "@fahd/core";
 import { launchItems, launches, presets } from "@fahd/db/schema";
 import type { LaunchDraft } from "@fahd/shared/launch-plan";
 import { and, eq } from "drizzle-orm";
@@ -95,5 +95,28 @@ export async function cancelLaunchAction(id: string): Promise<ActionResult> {
     revalidatePath(`/launches/${launchId}`);
     revalidatePath("/launches");
     return { ok: true, message: `Cancelled. ${cancelled} ${cancelled === 1 ? "item wasn't" : "items weren't"} created; anything already created stays paused on Meta.` };
+  });
+}
+
+export type ResumeResult = { stalled: boolean; resumed: boolean; waiting: boolean; usagePct: number | null; message: string };
+
+/**
+ * Pushes a stalled launch on (the launch page calls it every minute, and "Resume now").
+ * While Meta usage is 75%+ and fresh it waits, unless `force`; a running step is left alone.
+ */
+export async function resumeLaunchAction(id: string, { force = false }: { force?: boolean } = {}): Promise<ActionResult<ResumeResult>> {
+  return runAction<ResumeResult>(async () => {
+    const session = await requireRole(...EDITORS);
+    const launchId = z.uuid().parse(id);
+    const [launch] = await asUser(session.userId, (tx) => tx.select({ status: launches.status }).from(launches).where(eq(launches.id, launchId)));
+    if (!launch) throw new Error("Launch not found.");
+    if (launch.status !== "queued" && launch.status !== "running") return { ok: true, data: { stalled: false, resumed: false, waiting: false, usagePct: null, message: "Finished." } };
+    await assertNotKilled();
+    const state = await launchResumeState(getDb(), launchId);
+    if (!state.stalled) return { ok: true, data: { stalled: false, resumed: false, waiting: false, usagePct: state.usagePct, message: "Working on it." } };
+    if (state.waitForUsage && !force)
+      return { ok: true, data: { stalled: true, resumed: false, waiting: true, usagePct: state.usagePct, message: "Waiting for Meta usage to drop below 75%. It continues by itself." } };
+    await enqueue(launchId);
+    return { ok: true, message: "Resumed.", data: { stalled: false, resumed: true, waiting: false, usagePct: state.usagePct, message: "Resumed." } };
   });
 }

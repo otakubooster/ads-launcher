@@ -3,9 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Check, CircleAlert, Copy, CopyPlus, Loader2, Minus, Play, RotateCcw, X } from "lucide-react";
+import { Check, CircleAlert, Copy, CopyPlus, Loader2, Minus, Play, RotateCcw, StepForward, X } from "lucide-react";
 import { toast } from "sonner";
-import { activateAll, cancelLaunchAction, duplicateLaunch, retryFailedItems } from "@/app/(app)/launches/actions";
+import { activateAll, cancelLaunchAction, duplicateLaunch, resumeLaunchAction, retryFailedItems, type ResumeResult } from "@/app/(app)/launches/actions";
 import { useConfirm } from "@/components/ui/confirm";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -94,7 +94,7 @@ function ErrorText({ message, failed }: { message: string; failed: boolean }) {
   );
 }
 
-function report(res: ActionResult) {
+function report(res: ActionResult<unknown>) {
   if (res.ok) toast.success(res.message ?? "Done");
   else toast.error(res.error.title, { description: [res.error.detail, res.error.fix].filter(Boolean).join(" ") });
 }
@@ -103,7 +103,22 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
   const router = useRouter();
   const live = log.status === "queued" || log.status === "running";
   useLiveRefresh(live);
-  const [busy, setBusy] = React.useState<null | "retry" | "activate" | "duplicate" | "cancel">(null);
+  const [busy, setBusy] = React.useState<null | "retry" | "activate" | "duplicate" | "cancel" | "resume">(null);
+  // While this page is open, a stalled launch is pushed on every minute (Meta usage permitting),
+  // so it doesn't wait for the 15-minute sync job.
+  const [resume, setResume] = React.useState<ResumeResult | null>(null);
+  const canNudge = live && role !== "viewer";
+  React.useEffect(() => {
+    if (!canNudge) return;
+    let stop = false;
+    const nudge = () => void resumeLaunchAction(log.id).then((r) => !stop && r.ok && r.data && setResume(r.data));
+    nudge();
+    const t = setInterval(nudge, 60_000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [canNudge, log.id]);
   const { confirm: confirmCancel, dialog: cancelDialog } = useConfirm();
   const [confirm, setConfirm] = React.useState(false);
 
@@ -117,7 +132,7 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
   const canEdit = role !== "viewer";
   const allDone = log.items.length > 0 && log.items.every((i) => i.status === "done");
 
-  async function run(kind: "retry" | "activate" | "cancel", fn: () => Promise<ActionResult>) {
+  async function run(kind: "retry" | "activate" | "cancel" | "resume", fn: () => Promise<ActionResult<unknown>>) {
     setBusy(kind);
     const res = await fn();
     setBusy(null);
@@ -149,6 +164,11 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
             <Badge tone={pill.tone} data-testid="launch-status">
               {pill.label}
             </Badge>
+            {canEdit && live && resume?.stalled && (
+              <Button disabled={busy !== null} onClick={() => run("resume", () => resumeLaunchAction(log.id, { force: true }))}>
+                <StepForward /> {busy === "resume" ? "Resuming…" : "Resume now"}
+              </Button>
+            )}
             {canEdit && live && (
               <Button
                 variant="destructive"
@@ -192,6 +212,11 @@ export function LaunchLogView({ log, role }: { log: LaunchLog; role: UserRole })
         }
       />
       {cancelDialog}
+      {live && resume?.waiting && (
+        <p role="status" className="mb-3 rounded-control border border-amber-6 bg-amber-2 px-3 py-2 text-ui text-amber-11">
+          Paused while Meta usage is high{resume.usagePct !== null ? ` (${Math.round(resume.usagePct)}%)` : ""}. It continues by itself as soon as usage drops below 75%; you can leave this page.
+        </p>
+      )}
 
       <p className="mb-3 text-ui text-slate-11 tabular-nums" aria-live="polite">
         {done} of {objects.length} created · {ads.filter((a) => a.status === "done").length} of {ads.length} ads
