@@ -1,4 +1,4 @@
-import { adAccounts, adsetTemplates, changeLog, creativeUploads, creatives, launchItems, launches, metaAds, metaAdsets, metaAssets, metaCampaigns, presets } from "@fahd/db/schema";
+import { adAccounts, adsetTemplates, apiUsage, changeLog, creativeUploads, creatives, launchItems, launches, metaAds, metaAdsets, metaAssets, metaCampaigns, presets } from "@fahd/db/schema";
 import type { AdsetTemplateSpec } from "@fahd/db/schema";
 import { MetaApiError, describeMetaError, setStatus, type BatchRequest, type MetaClient, type Params } from "@fahd/meta";
 import { CREATIVE_FEATURES, reachesEu } from "@fahd/shared/meta-options";
@@ -815,6 +815,37 @@ export async function acquireLaunchLease(db: AnyDb, launchId: string, seconds: n
 
 export async function releaseLaunchLease(db: AnyDb, launchId: string) {
   await db.update(launches).set({ leaseUntil: null }).where(eq(launches.id, launchId));
+}
+
+export type ResumeState = {
+  /** No step is working on it (lease free, nothing changed for a minute). */
+  stalled: boolean;
+  /** Latest Meta usage % for the account, and when it was measured. */
+  usagePct: number | null;
+  usageAt: Date | null;
+  /** Usage is at the pause line and was measured recently: wait rather than call Meta. */
+  waitForUsage: boolean;
+};
+
+/**
+ * Whether a running launch can be pushed on now. While Meta usage is at 75%+ the
+ * runner pauses; a fresh reading below that, or one older than 10 minutes (one
+ * call refreshes it), lets it continue.
+ */
+export async function launchResumeState(db: AnyDb, launchId: string, { idleSeconds = 60 }: { idleSeconds?: number } = {}): Promise<ResumeState> {
+  const stalled = (await stalledLaunches(db, idleSeconds)).includes(launchId);
+  const [row] = await db
+    .select({ pct: apiUsage.accUtilPct, at: apiUsage.recordedAt })
+    .from(launches)
+    .innerJoin(presets, eq(presets.id, launches.presetId))
+    .innerJoin(apiUsage, eq(apiUsage.adAccountId, presets.adAccountId))
+    .where(eq(launches.id, launchId))
+    .orderBy(sql`${apiUsage.recordedAt} desc`)
+    .limit(1);
+  const usagePct = row?.pct ?? null;
+  const usageAt = row?.at ?? null;
+  const recent = usageAt ? Date.now() - usageAt.getTime() < 10 * 60_000 : false;
+  return { stalled, usagePct, usageAt, waitForUsage: usagePct !== null && usagePct >= 75 && recent };
 }
 
 /** Launches whose runner stopped mid-way (a step died or a chain broke): resume them. */
