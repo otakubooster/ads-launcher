@@ -740,7 +740,7 @@ export async function activateLaunch(
       if (level !== "ad" && (item.payload as CampaignPayload | AdsetPayload).source === "existing") continue;
       const entry = { actorId: opts.actorId, source: opts.source, entityLevel: level, entityId: item.metaId!, action: "activate", before: { status: "PAUSED" }, after: { status: "ACTIVE", launchId } } as const;
       try {
-        const res = await setStatus(client!, item.metaId!, "ACTIVE", metaAccountId!);
+        const res = await setStatus(client!, item.metaId!, "ACTIVE", metaAccountId!, { interactive: true });
         await db.insert(changeLog).values({ ...entry, metaResponse: res as object });
       } catch (e) {
         await db.insert(changeLog).values({ ...entry, after: { status: "PAUSED", launchId }, metaResponse: { error: e instanceof Error ? e.message : String(e) } });

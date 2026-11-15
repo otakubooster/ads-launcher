@@ -35,7 +35,7 @@ async function loadObject(db: AnyDb, level: ObjectLevel, id: string) {
 export async function changeStatus(db: AnyDb, level: ObjectLevel, id: string, status: "ACTIVE" | "PAUSED"): Promise<MetaChange> {
   const obj = await loadObject(db, level, id);
   const { client, metaAccountId } = await clientForAdAccount(db, obj.adAccountId);
-  const metaResponse = await setStatus(client, obj.metaId, status, metaAccountId);
+  const metaResponse = await setStatus(client, obj.metaId, status, metaAccountId, { interactive: true });
   const table = TABLES[level];
   await db.update(table).set({ status, effectiveStatus: status }).where(eq(table.id, id));
   return { level, id, metaId: obj.metaId, adAccountId: obj.adAccountId, name: obj.name, before: { status: obj.status }, after: { status }, metaResponse };
@@ -70,7 +70,7 @@ export async function changeDailyBudget(db: AnyDb, level: "campaign" | "adset", 
     throw new MetaApiError({ kind: "guard", message: `This ${level === "adset" ? "ad set" : level} has no daily budget to change` });
   }
   const { client, metaAccountId } = await clientForAdAccount(db, row.adAccountId);
-  const metaResponse = await setDailyBudget(client, row.metaId, dailyBudget, metaAccountId);
+  const metaResponse = await setDailyBudget(client, row.metaId, dailyBudget, metaAccountId, { interactive: true });
   await db.update(table).set({ dailyBudget }).where(eq(table.id, id));
   return {
     level,

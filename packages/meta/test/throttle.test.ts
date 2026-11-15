@@ -61,6 +61,28 @@ describe("Throttle", () => {
     expect(throttle.pausedUntil(A)).toBeNull();
   });
 
+  it("lets a person's one-off action through the 75% pause below 95%, but not Meta's own block", async () => {
+    const { throttle, clock } = setup();
+    throttle.record(A, parseUsage({ "x-ad-account-usage": '{"acc_id_util_pct": 80, "reset_time_duration": 600}' }));
+    // Launch steps wait (handed back as a rate limit for a long pause)...
+    await expect(throttle.run(A, "write", async () => "launch")).rejects.toMatchObject({ kind: "rate_limit" });
+    // ...a click to activate goes now.
+    expect(await throttle.run(A, "write", async () => "activate", { interactive: true })).toBe("activate");
+    expect(clock.slept.filter((ms) => ms > 1000)).toEqual([]);
+
+    // At 95%+ even clicks wait.
+    throttle.record(A, parseUsage({ "x-ad-account-usage": '{"acc_id_util_pct": 96, "reset_time_duration": 600}' }));
+    await expect(throttle.run(A, "write", async () => 1, { interactive: true })).rejects.toBeInstanceOf(MetaApiError);
+
+    // Usage back under 75%: the pause lifts at once.
+    throttle.record(A, parseUsage({ "x-ad-account-usage": '{"acc_id_util_pct": 40, "reset_time_duration": 0}' }));
+    expect(throttle.pausedUntil(A)).toBeNull();
+
+    // Meta itself refused calls: nobody goes.
+    throttle.block(A, clock.now() + 600_000);
+    await expect(throttle.run(A, "write", async () => 1, { interactive: true })).rejects.toMatchObject({ kind: "rate_limit" });
+  });
+
   it("hands long pauses back to the caller instead of sleeping", async () => {
     const { throttle, clock } = setup();
     throttle.record(

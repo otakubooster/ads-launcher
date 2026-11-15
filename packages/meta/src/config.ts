@@ -28,6 +28,8 @@ export const REQUIRED_PERMISSIONS = [
 export const LIMITS = {
   /** Any usage value at or above this pauses the account. */
   pauseAtPct: 75,
+  /** One-off actions a person clicks (activate, pause, budget, edit) still run below this. */
+  interactiveMaxPct: 95,
   /** At most 2 writes per second per ad account. */
   minWriteIntervalMs: 500,
   /** Never more than 3 retries for any request. */

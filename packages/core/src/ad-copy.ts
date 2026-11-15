@@ -49,7 +49,7 @@ async function loadCreative(db: AnyDb, adId: string) {
   if (!ad) throw new Error("ad not found");
   if (!ad.creativeId) throw new MetaApiError({ kind: "guard", message: "This ad has no creative to edit" });
   const { client, metaAccountId } = await clientForAdAccount(db, ad.adAccountId);
-  const creative = await client.get<Creative>(ad.creativeId, { fields: FIELDS }, { accountId: metaAccountId });
+  const creative = await client.get<Creative>(ad.creativeId, { fields: FIELDS }, { accountId: metaAccountId, interactive: true });
   return { ad, client, metaAccountId, creative };
 }
 
@@ -129,8 +129,8 @@ export async function editAdCopy(db: AnyDb, adId: string, next: Omit<AdCopy, "fo
     params.object_story_spec = { ...spec, video_data: { ...spec.video_data, message: texts[0], title: headlines[0], link_description: descriptions[0], call_to_action: cta } };
   }
 
-  const created = await client.post<{ id: string }>(`${metaAccountId}/adcreatives`, params, { accountId: metaAccountId });
-  const swapped = await client.post<{ success: boolean }>(ad.metaId, { creative: { creative_id: created.id } }, { accountId: metaAccountId });
+  const created = await client.post<{ id: string }>(`${metaAccountId}/adcreatives`, params, { accountId: metaAccountId, interactive: true });
+  const swapped = await client.post<{ success: boolean }>(ad.metaId, { creative: { creative_id: created.id } }, { accountId: metaAccountId, interactive: true });
   await db.update(metaAds).set({ creativeId: created.id }).where(eq(metaAds.id, adId));
   return { level: "ad", id: adId, metaId: ad.metaId, adAccountId: ad.adAccountId, name: ad.name, before: { ...before, creativeId: creative.id }, after: { ...after, creativeId: created.id }, metaResponse: { creative: created, ad: swapped }, creativeId: created.id };
 }

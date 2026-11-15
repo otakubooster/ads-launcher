@@ -9,7 +9,9 @@ const realSleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /**
  * Per-ad-account throttle for one process: writes run one at a time, at least
  * 500 ms apart (2 per second), and every call to an account waits while Meta's
- * usage for it is at or above 75%. Waits longer than LIMITS.maxInlineWaitMs
+ * usage for it is at or above 75% (interactive calls, a person's one-off click,
+ * keep going below 95%; a rate limit Meta itself returned stops everything).
+ * Waits longer than LIMITS.maxInlineWaitMs
  * throw a rate_limit error with retryAfterMs so a queue can reschedule instead.
  *
  * The worker gets the same rules across processes from BullMQ (one queue per
@@ -20,7 +22,10 @@ export class Throttle {
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly writeChains = new Map<string, Promise<unknown>>();
   private readonly lastWriteAt = new Map<string, number>();
+  /** Meta refused calls (rate-limit error): everything waits. */
   private readonly blocked = new Map<string, number>();
+  /** Our own pause at 75% usage, with the usage that caused it. */
+  private readonly usagePaused = new Map<string, { until: number; pct: number }>();
 
   constructor({ now = Date.now, sleep = realSleep }: Clock = {}) {
     this.now = now;
@@ -28,30 +33,39 @@ export class Throttle {
   }
 
   /** When the account's calls may resume, or null if they may run now. */
-  pausedUntil(accountId: string): number | null {
-    const until = this.blocked.get(accountId);
-    return until !== undefined && until > this.now() ? until : null;
+  pausedUntil(accountId: string, { interactive = false }: { interactive?: boolean } = {}): number | null {
+    const now = this.now();
+    const hard = this.blocked.get(accountId);
+    const soft = this.usagePaused.get(accountId);
+    const softApplies = soft && soft.until > now && !(interactive && soft.pct < LIMITS.interactiveMaxPct);
+    const until = Math.max(hard !== undefined && hard > now ? hard : 0, softApplies ? soft.until : 0);
+    return until > 0 ? until : null;
   }
 
   /** Feed every response's usage headers in; high usage pauses the account. */
   record(accountId: string, usage: UsageSnapshot | null) {
     const until = pauseUntil(usage, this.now());
-    if (until !== null) this.block(accountId, until);
+    if (until !== null && usage) {
+      const prev = this.usagePaused.get(accountId);
+      this.usagePaused.set(accountId, { until: Math.max(until, prev?.until ?? 0), pct: usage.maxPct });
+    } else if (usage) {
+      this.usagePaused.delete(accountId);
+    }
   }
 
   block(accountId: string, untilMs: number) {
     this.blocked.set(accountId, Math.max(untilMs, this.blocked.get(accountId) ?? 0));
   }
 
-  run<T>(accountId: string | null, kind: "read" | "write", fn: () => Promise<T>): Promise<T> {
+  run<T>(accountId: string | null, kind: "read" | "write", fn: () => Promise<T>, { interactive = false }: { interactive?: boolean } = {}): Promise<T> {
     if (!accountId) return fn();
-    if (kind === "read") return this.waitWhileBlocked(accountId).then(fn);
+    if (kind === "read") return this.waitWhileBlocked(accountId, interactive).then(fn);
 
     const previous = this.writeChains.get(accountId) ?? Promise.resolve();
     const next = previous
       .catch(() => {})
       .then(async () => {
-        await this.waitWhileBlocked(accountId);
+        await this.waitWhileBlocked(accountId, interactive);
         const last = this.lastWriteAt.get(accountId);
         const gap = last === undefined ? 0 : last + LIMITS.minWriteIntervalMs - this.now();
         if (gap > 0) await this.sleep(gap);
@@ -65,8 +79,8 @@ export class Throttle {
     return next;
   }
 
-  private async waitWhileBlocked(accountId: string) {
-    const until = this.pausedUntil(accountId);
+  private async waitWhileBlocked(accountId: string, interactive = false) {
+    const until = this.pausedUntil(accountId, { interactive });
     if (until === null) return;
     const wait = until - this.now();
     if (wait > LIMITS.maxInlineWaitMs) {

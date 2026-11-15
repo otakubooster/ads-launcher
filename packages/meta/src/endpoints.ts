@@ -75,21 +75,21 @@ export async function listPixels(client: MetaClient, adAccountId: string) {
  * Pause or activate a campaign, ad set or ad. Activation is a separate,
  * confirmed action in the app; callers write change_log before and after.
  */
-export function setStatus(client: MetaClient, objectId: string, status: "ACTIVE" | "PAUSED", adAccountId: string) {
-  return client.post<{ success: boolean }>(objectId, { status }, { accountId: adAccountId });
+export function setStatus(client: MetaClient, objectId: string, status: "ACTIVE" | "PAUSED", adAccountId: string, opts: { interactive?: boolean } = {}) {
+  return client.post<{ success: boolean }>(objectId, { status }, { accountId: adAccountId, interactive: opts.interactive });
 }
 
 /** Deletes a campaign, ad set or ad on Meta (its ad sets and ads go with it). Can't be undone. */
 export function deleteObject(client: MetaClient, objectId: string, adAccountId: string) {
-  return client.delete<{ success: boolean }>(objectId, undefined, { accountId: adAccountId });
+  return client.delete<{ success: boolean }>(objectId, undefined, { accountId: adAccountId, interactive: true });
 }
 
 /** Budgets are in the account currency's minor unit (cents). */
-export function setDailyBudget(client: MetaClient, objectId: string, dailyBudgetMinor: number, adAccountId: string) {
+export function setDailyBudget(client: MetaClient, objectId: string, dailyBudgetMinor: number, adAccountId: string, opts: { interactive?: boolean } = {}) {
   if (!Number.isInteger(dailyBudgetMinor) || dailyBudgetMinor <= 0) {
     throw new MetaApiError({ kind: "guard", message: "Daily budget must be a positive whole number of minor units" });
   }
-  return client.post<{ success: boolean }>(objectId, { daily_budget: dailyBudgetMinor }, { accountId: adAccountId });
+  return client.post<{ success: boolean }>(objectId, { daily_budget: dailyBudgetMinor }, { accountId: adAccountId, interactive: opts.interactive });
 }
 
 async function collect<T>(items: AsyncIterable<T>) {

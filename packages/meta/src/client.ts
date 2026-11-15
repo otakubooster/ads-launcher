@@ -13,6 +13,8 @@ export type RequestOptions = {
   /** act_… id used for throttling and usage; read from the path when it starts with act_. */
   accountId?: string;
   signal?: AbortSignal;
+  /** A person's one-off action: keeps going through the app's 75% usage pause (below 95%). */
+  interactive?: boolean;
 };
 
 export type UsageEvent = { accountId: string | null; usage: UsageSnapshot; at: Date };
@@ -199,9 +201,9 @@ export class MetaClient {
       let usage: UsageSnapshot | null = null;
       let error: MetaApiError;
       try {
-        const res = await this.throttle.run(accountId, method === "GET" ? "read" : "write", () =>
-          this.send(method, path, params, options.signal),
-        );
+        const res = await this.throttle.run(accountId, method === "GET" ? "read" : "write", () => this.send(method, path, params, options.signal), {
+          interactive: options.interactive,
+        });
         status = res.status;
         usage = parseUsage(res.headers);
         if (usage) await this.reportUsage(accountId, usage);
