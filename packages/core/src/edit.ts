@@ -161,7 +161,7 @@ export async function editObject(db: AnyDb, level: ObjectLevel, id: string, edit
   if (Object.keys(params).length === 0) return { level, id, metaId: row.metaId, adAccountId: row.adAccountId, name: row.name, before, after, metaResponse: { skipped: "no changes" } };
 
   const { client, metaAccountId } = await clientForAdAccount(db, row.adAccountId);
-  const metaResponse = await client.post<{ success: boolean }>(row.metaId, params, { accountId: metaAccountId });
+  const metaResponse = await client.post<{ success: boolean }>(row.metaId, params, { accountId: metaAccountId, interactive: true });
 
   // Mirror what Meta now has, so the table shows it before the next sync.
   const nextRaw: Raw = { ...raw };
